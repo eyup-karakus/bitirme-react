@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { issueService, projectService, userService } from '../services/api';
+import { mapIssueFromApi, mapIssueToApi } from '../utils/adapters';
 import {
   Box,
   Typography,
@@ -31,6 +33,10 @@ import {
   Tooltip,
   Badge,
   Divider,
+  CircularProgress,
+  FormHelperText,
+  Snackbar,
+  Alert
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -45,53 +51,17 @@ import {
   Remove as MediumIcon,
   FilterList as FilterIcon,
   Search as SearchIcon,
+  Refresh as RefreshIcon,
+  Assignment as AssignmentIcon
 } from '@mui/icons-material';
 import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 import { useProject } from '../context/ProjectContext';
 
 const Issues = () => {
   const { projects } = useProject();
-  const [issues, setIssues] = useState([
-    {
-      id: '1',
-      title: 'Fix login authentication bug',
-      description: 'Users are unable to login with correct credentials',
-      type: 'bug',
-      status: 'todo',
-      priority: 'high',
-      projectId: 1,
-      assignee: 'John Doe',
-      reporter: 'Jane Smith',
-      createdAt: '2024-01-20',
-      updatedAt: '2024-01-22',
-    },
-    {
-      id: '2',
-      title: 'Implement user dashboard',
-      description: 'Create a comprehensive dashboard for users to track their activities',
-      type: 'story',
-      status: 'in_progress',
-      priority: 'medium',
-      projectId: 1,
-      assignee: 'Alice Johnson',
-      reporter: 'Bob Wilson',
-      createdAt: '2024-01-18',
-      updatedAt: '2024-01-18',
-    },
-    {
-      id: '3',
-      title: 'Setup CI/CD pipeline',
-      description: 'Configure automated deployment pipeline for the project',
-      type: 'task',
-      status: 'done',
-      priority: 'high',
-      projectId: 2,
-      assignee: 'Charlie Brown',
-      reporter: 'David Lee',
-      createdAt: '2024-01-15',
-      updatedAt: '2024-01-21',
-    },
-  ]);
+  const [issues, setIssues] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const [openDialog, setOpenDialog] = useState(false);
   const [editingIssue, setEditingIssue] = useState(null);
@@ -105,74 +75,93 @@ const Issues = () => {
     status: 'todo',
     priority: 'medium',
     projectId: '',
-    assignee: '',
+    assigneeId: '',
   });
+  
+  // Yeni eklenen state'ler
+  const [formErrors, setFormErrors] = useState({});
+  const [formSubmitting, setFormSubmitting] = useState(false);
+  const [notification, setNotification] = useState(null);
+  const [users, setUsers] = useState([]);
 
-  const issueTypes = {
-    bug: { icon: <BugIcon />, color: '#FF5630', label: 'Bug' },
-    task: { icon: <TaskIcon />, color: '#0052CC', label: 'Task' },
-    story: { icon: <StoryIcon />, color: '#36B37E', label: 'Story' },
-  };
+  // Seçenek listeleri
+  const issueTypeOptions = [
+    { value: 'bug', icon: <BugIcon color="error" />, label: 'Bug' },
+    { value: 'task', icon: <TaskIcon color="primary" />, label: 'Task' },
+    { value: 'story', icon: <StoryIcon color="success" />, label: 'Story' }
+  ];
 
-  const statusConfig = {
-    todo: { 
-      title: 'TO DO', 
-      color: '#DFE1E6',
-      bgColor: '#FAFBFC',
-      borderColor: '#DFE1E6'
-    },
-    in_progress: { 
-      title: 'IN PROGRESS', 
-      color: '#0052CC',
-      bgColor: '#E6F3FF',
-      borderColor: '#0052CC'
-    },
-    done: { 
-      title: 'DONE', 
-      color: '#36B37E',
-      bgColor: '#E6FCFF',
-      borderColor: '#36B37E'
-    },
-  };
+  const statusOptions = [
+    { value: 'todo', label: 'To Do' },
+    { value: 'in_progress', label: 'In Progress' },
+    { value: 'done', label: 'Done' }
+  ];
 
-  const priorityIcons = {
-    low: <LowIcon sx={{ color: '#36B37E' }} />,
-    medium: <MediumIcon sx={{ color: '#FFA500' }} />,
-    high: <HighIcon sx={{ color: '#FF5630' }} />,
-    critical: <HighIcon sx={{ color: '#DE350B' }} />,
-  };
+  const priorityOptions = [
+    { value: 'low', icon: <LowIcon sx={{ color: '#36B37E' }} />, label: 'Low' },
+    { value: 'medium', icon: <MediumIcon sx={{ color: '#FFA500' }} />, label: 'Medium' },
+    { value: 'high', icon: <HighIcon sx={{ color: '#FF5630' }} />, label: 'High' },
+    { value: 'critical', icon: <HighIcon sx={{ color: '#DE350B' }} />, label: 'Critical' }
+  ];
 
-  // Drag and Drop Handler
-  const onDragEnd = (result) => {
-    const { destination, source, draggableId } = result;
+  // Sayfa yüklendiğinde verileri çek
+  useEffect(() => {
+    fetchData();
+  }, []);
 
-    if (!destination) return;
-
-    if (
-      destination.droppableId === source.droppableId &&
-      destination.index === source.index
-    ) {
-      return;
+  // Verileri API'den çekme
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [issuesResponse, usersResponse] = await Promise.all([
+        issueService.getAll(),
+        userService.getAll()
+      ]);
+      
+      // API'den gelen verileri frontend formatına dönüştür
+      const mappedIssues = issuesResponse.data.map(mapIssueFromApi);
+      setIssues(mappedIssues);
+      setUsers(usersResponse.data);
+      
+      setError(null);
+    } catch (err) {
+      console.error('Veri yüklenirken hata oluştu:', err);
+      setError('Veriler yüklenirken bir hata oluştu. Lütfen daha sonra tekrar deneyin.');
+    } finally {
+      setLoading(false);
     }
-
-    const updatedIssues = issues.map(issue => {
-      if (issue.id === draggableId) {
-        return {
-          ...issue,
-          status: destination.droppableId,
-          updatedAt: new Date().toISOString()
-        };
-      }
-      return issue;
-    });
-
-    setIssues(updatedIssues);
   };
 
+  // Form alanları değiştiğinde
+  const handleFormChange = (e) => {
+    const { name, value } = e.target;
+    setFormData({
+      ...formData,
+      [name]: value
+    });
+    
+    // Hata mesajını temizle
+    if (formErrors[name]) {
+      setFormErrors({
+        ...formErrors,
+        [name]: false
+      });
+    }
+  };
+
+  // Dialog açma işlevi
   const handleOpenDialog = (issue = null) => {
     if (issue) {
       setEditingIssue(issue);
-      setFormData(issue);
+      setFormData({
+        title: issue.title,
+        description: issue.description || '',
+        type: issue.type,
+        status: issue.status,
+        priority: issue.priority || 'medium',
+        projectId: issue.projectId,
+        assigneeId: issue.assigneeId || '',
+      });
     } else {
       setEditingIssue(null);
       setFormData({
@@ -181,379 +170,347 @@ const Issues = () => {
         type: 'task',
         status: 'todo',
         priority: 'medium',
-        projectId: projects[0]?.id || '',
-        assignee: '',
+        projectId: projects.length > 0 ? projects[0].id : '',
+        assigneeId: '',
       });
     }
+    setFormErrors({});
     setOpenDialog(true);
   };
 
+  // Dialog kapatma işlevi
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setEditingIssue(null);
+    setFormErrors({});
   };
 
-  const handleSaveIssue = () => {
-    if (editingIssue) {
-      setIssues(issues.map(i => 
-        i.id === editingIssue.id 
-          ? { ...formData, id: editingIssue.id, updatedAt: new Date().toISOString() }
-          : i
-      ));
-    } else {
-      const newIssue = {
-        ...formData,
-        id: Date.now().toString(),
-        reporter: 'Current User',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      setIssues([...issues, newIssue]);
-    }
-    handleCloseDialog();
-  };
-
-  const handleDeleteIssue = (issueId) => {
-    setIssues(issues.filter(i => i.id !== issueId));
-    handleCloseMenu();
-  };
-
-  const handleMenuClick = (event, issue) => {
+  // Context menu açma işlevi
+  const handleOpenMenu = (event, issue) => {
     setAnchorEl(event.currentTarget);
     setSelectedIssue(issue);
   };
 
+  // Context menu kapatma işlevi
   const handleCloseMenu = () => {
     setAnchorEl(null);
     setSelectedIssue(null);
   };
 
-  const getProjectName = (projectId) => {
-    const project = projects.find(p => p.id === projectId);
-    return project ? project.name : 'Unknown Project';
+  // Issue kaydetme işlevi
+  const handleSaveIssue = async () => {
+    // Form doğrulama
+    const errors = {};
+    if (!formData.title.trim()) errors.title = "Başlık gerekli";
+    if (!formData.type) errors.type = "Tür seçimi gerekli";
+    if (!formData.status) errors.status = "Durum seçimi gerekli";
+    if (!formData.projectId) errors.projectId = "Proje seçimi gerekli";
+    
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+    
+    try {
+      setFormSubmitting(true);
+      
+      if (editingIssue) {
+        // Frontend verisini API formatına dönüştür
+        const apiIssueData = mapIssueToApi({...formData, id: editingIssue.id});
+        
+        // API'yi çağır
+        await issueService.update(editingIssue.id, apiIssueData);
+        
+        // UI'ı güncelle
+        setIssues(issues.map(i => 
+          i.id === editingIssue.id 
+            ? { ...formData, id: editingIssue.id, updatedAt: new Date().toISOString() }
+            : i
+        ));
+        
+        setNotification({
+          type: 'success',
+          message: 'Issue başarıyla güncellendi'
+        });
+      } else {
+        // Frontend verisini API formatına dönüştür
+        const apiIssueData = mapIssueToApi(formData);
+        
+        // API'yi çağır
+        const response = await issueService.create(apiIssueData);
+        
+        // API'den dönen veriyi frontend formatına dönüştür
+        const newIssue = mapIssueFromApi(response.data);
+        
+        // UI'ı güncelle
+        setIssues([...issues, newIssue]);
+        
+        setNotification({
+          type: 'success',
+          message: 'Yeni issue başarıyla oluşturuldu'
+        });
+      }
+      handleCloseDialog();
+    } catch (err) {
+      console.error('Issue kaydedilirken hata oluştu:', err);
+      setNotification({
+        type: 'error',
+        message: 'Issue kaydedilirken bir hata oluştu'
+      });
+    } finally {
+      setFormSubmitting(false);
+    }
   };
 
-  const filterIssuesByStatus = (status) => {
-    return issues.filter(issue => issue.status === status);
+  // Issue silme işlevi
+  const handleDeleteIssue = async (issueId) => {
+    if (!issueId) return;
+    
+    if (!window.confirm('Bu issue\'yu silmek istediğinizden emin misiniz?')) {
+      return;
+    }
+    
+    try {
+      await issueService.delete(issueId);
+      setIssues(issues.filter(i => i.id !== issueId));
+      handleCloseMenu();
+      setNotification({
+        type: 'success',
+        message: 'Issue başarıyla silindi'
+      });
+    } catch (err) {
+      console.error('Issue silinirken hata oluştu:', err);
+      setNotification({
+        type: 'error',
+        message: 'Issue silinirken bir hata oluştu'
+      });
+    }
   };
 
-  // Issue Card Component
-  const IssueCard = ({ issue, index }) => (
-    <Draggable draggableId={issue.id} index={index}>
-      {(provided, snapshot) => (
-        <Card
-          ref={provided.innerRef}
-          {...provided.draggableProps}
-          {...provided.dragHandleProps}
-          sx={{
-            mb: 2,
-            cursor: 'grab',
-            transform: snapshot.isDragging ? 'rotate(5deg)' : 'none',
-            boxShadow: snapshot.isDragging ? 4 : 1,
-            '&:hover': {
-              boxShadow: 2,
-            },
-            '&:active': {
-              cursor: 'grabbing',
-            },
-          }}
-        >
-          <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-            <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={1}>
-              <Typography variant="body2" color="text.secondary" fontSize="11px">
-                #{issue.id}
-              </Typography>
-              <IconButton 
-                size="small" 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleMenuClick(e, issue);
-                }}
-                sx={{ p: 0.5 }}
-              >
-                <MoreVertIcon fontSize="small" />
-              </IconButton>
-            </Box>
-            
-            <Typography 
-              variant="body2" 
-              mb={2} 
-              sx={{ 
-                fontWeight: 500,
-                lineHeight: 1.4,
-                fontSize: '14px',
-                color: '#172B4D'
-              }}
-            >
-              {issue.title}
-            </Typography>
-            
-            <Box display="flex" justifyContent="space-between" alignItems="center">
-              <Box display="flex" alignItems="center" gap={0.5}>
-                <Box sx={{ color: issueTypes[issue.type].color, display: 'flex' }}>
-                  {React.cloneElement(issueTypes[issue.type].icon, { fontSize: 'small' })}
-                </Box>
-                <Tooltip title={`Priority: ${issue.priority}`}>
-                  <Box sx={{ display: 'flex' }}>
-                    {React.cloneElement(priorityIcons[issue.priority], { fontSize: 'small' })}
-                  </Box>
-                </Tooltip>
-              </Box>
-              <Avatar sx={{ width: 24, height: 24, fontSize: 11, bgcolor: '#0052CC' }}>
-                {issue.assignee?.charAt(0) || 'U'}
-              </Avatar>
-            </Box>
-          </CardContent>
-        </Card>
-      )}
-    </Draggable>
-  );
+  // Bildirim kapatma
+  const handleCloseNotification = () => {
+    setNotification(null);
+  };
 
-  // Kanban Board View
+  // Kanban Board bileşeni
   const KanbanBoard = () => {
-    const columns = [
-      { id: 'todo', ...statusConfig.todo, issues: filterIssuesByStatus('todo') },
-      { id: 'in_progress', ...statusConfig.in_progress, issues: filterIssuesByStatus('in_progress') },
-      { id: 'done', ...statusConfig.done, issues: filterIssuesByStatus('done') },
-    ];
-
+    const columns = {
+      todo: issues.filter(issue => issue.status === 'todo'),
+      in_progress: issues.filter(issue => issue.status === 'in_progress'),
+      done: issues.filter(issue => issue.status === 'done')
+    };
+    
+    const columnTitles = {
+      todo: 'To Do',
+      in_progress: 'In Progress',
+      done: 'Done'
+    };
+    
     return (
-      <DragDropContext onDragEnd={onDragEnd}>
-        <Box sx={{ 
-          display: 'flex', 
-          gap: 3, 
-          minHeight: '70vh',
-          overflow: 'auto',
-          pb: 2
-        }}>
-          {columns.map((column) => (
-            <Box 
-              key={column.id} 
-              sx={{ 
-                minWidth: '300px',
-                width: '300px',
-                backgroundColor: column.bgColor,
-                borderRadius: 1,
+      <Grid container spacing={2}>
+        {Object.keys(columns).map(columnKey => (
+          <Grid item xs={12} md={4} key={columnKey}>
+            <Paper
+              sx={{
                 p: 2,
+                bgcolor: '#F4F5F7',
+                height: '100%',
+                minHeight: '70vh',
+                display: 'flex',
+                flexDirection: 'column'
               }}
             >
-              {/* Column Header */}
-              <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                <Typography 
-                  variant="subtitle2" 
-                  fontWeight="bold" 
-                  sx={{ 
-                    color: '#5E6C84',
-                    fontSize: '12px',
-                    letterSpacing: '0.5px'
-                  }}
-                >
-                  {column.title}
+              <Box
+                display="flex"
+                justifyContent="space-between"
+                alignItems="center"
+                mb={2}
+              >
+                <Typography variant="h6" fontWeight="bold">
+                  {columnTitles[columnKey]}
                 </Typography>
-                <Box display="flex" alignItems="center" gap={1}>
-                  <Typography 
-                    variant="caption" 
-                    sx={{ 
-                      bgcolor: '#DFE1E6',
-                      borderRadius: '10px',
-                      px: 1,
-                      py: 0.2,
-                      fontSize: '11px',
-                      fontWeight: 'bold',
-                      color: '#5E6C84'
-                    }}
-                  >
-                    {column.issues.length}
-                  </Typography>
-                  {column.id === 'todo' && (
-                    <IconButton 
-                      size="small" 
-                      onClick={() => handleOpenDialog()}
-                      sx={{ p: 0.5 }}
-                    >
-                      <AddIcon fontSize="small" />
-                    </IconButton>
-                  )}
-                </Box>
+                <Chip
+                  label={columns[columnKey].length}
+                  size="small"
+                  sx={{ bgcolor: '#DFE1E6' }}
+                />
               </Box>
-
-              {/* Droppable Area */}
-              <Droppable droppableId={column.id}>
-                {(provided, snapshot) => (
+              
+              <Box sx={{ flexGrow: 1, overflowY: 'auto' }}>
+                {columns[columnKey].length === 0 ? (
                   <Box
-                    ref={provided.innerRef}
-                    {...provided.droppableProps}
                     sx={{
-                      minHeight: 200,
-                      backgroundColor: snapshot.isDraggingOver ? '#F4F5F7' : 'transparent',
-                      borderRadius: 1,
-                      transition: 'background-color 0.2s ease',
+                      p: 2,
+                      textAlign: 'center',
+                      color: 'text.secondary',
+                      bgcolor: '#EBECF0',
+                      borderRadius: 1
                     }}
                   >
-                    {/* Create Work Item Card (only for TODO) */}
-                    {column.id === 'todo' && column.issues.length === 0 && (
-                      <Card 
-                        sx={{ 
-                          mb: 2, 
-                          cursor: 'pointer',
-                          border: '2px dashed #DFE1E6',
-                          backgroundColor: 'transparent',
-                          '&:hover': {
-                            borderColor: '#0052CC',
-                            backgroundColor: '#F4F5F7'
-                          }
-                        }}
-                        onClick={() => handleOpenDialog()}
-                      >
-                        <CardContent sx={{ 
-                          textAlign: 'center', 
-                          py: 3,
-                          '&:last-child': { pb: 3 }
-                        }}>
-                          <Box sx={{ mb: 2, opacity: 0.6 }}>
-                            <img 
-                              src="/api/placeholder/80/60" 
-                              alt="Create item"
-                              style={{ width: 80, height: 60, objectFit: 'contain' }}
-                            />
+                    <Typography variant="body2">
+                      Bu kolonda henüz issue bulunmuyor
+                    </Typography>
+                  </Box>
+                ) : (
+                  columns[columnKey].map(issue => (
+                    <Card
+                      key={issue.id}
+                      sx={{
+                        mb: 2,
+                        cursor: 'pointer',
+                        '&:hover': { boxShadow: 3 }
+                      }}
+                    >
+                      <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                        <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                          <Box display="flex" alignItems="center" gap={1}>
+                            {issue.type === 'bug' && <BugIcon color="error" fontSize="small" />}
+                            {issue.type === 'task' && <TaskIcon color="primary" fontSize="small" />}
+                            {issue.type === 'story' && <StoryIcon color="success" fontSize="small" />}
+                            <Typography variant="subtitle2" noWrap>
+                              {issue.title}
+                            </Typography>
                           </Box>
-                          <Typography variant="body2" color="text.secondary" mb={1}>
-                            Create a work item to get started.
-                          </Typography>
-                          <Button 
-                            variant="text" 
+                          <IconButton
                             size="small"
-                            sx={{ 
-                              textTransform: 'none',
-                              color: '#0052CC',
-                              fontWeight: 500
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenMenu(e, issue);
                             }}
                           >
-                            Create work item
-                          </Button>
-                        </CardContent>
-                      </Card>
-                    )}
-
-                    {/* Issues */}
-                    {column.issues.map((issue, index) => (
-                      <IssueCard key={issue.id} issue={issue} index={index} />
-                    ))}
-                    {provided.placeholder}
-                  </Box>
+                            <MoreVertIcon fontSize="small" />
+                          </IconButton>
+                        </Box>
+                        
+                        <Box display="flex" justifyContent="space-between" alignItems="center">
+                          <Chip
+                            size="small"
+                            label={issue.priority}
+                            sx={{
+                              bgcolor: 
+                                issue.priority === 'high' ? '#FFEBE6' :
+                                issue.priority === 'medium' ? '#FFFAE6' :
+                                issue.priority === 'critical' ? '#FF8F73' : '#E3FCEF',
+                              color: 
+                                issue.priority === 'high' ? '#DE350B' :
+                                issue.priority === 'medium' ? '#FF8B00' :
+                                issue.priority === 'critical' ? '#BF2600' : '#006644'
+                            }}
+                          />
+                          
+                          {issue.assigneeName ? (
+                            <Tooltip title={issue.assigneeName || ''}>
+                              <Avatar
+                                sx={{ width: 24, height: 24, fontSize: 12 }}
+                              >
+                                {issue.assigneeName && typeof issue.assigneeName === 'string' ? issue.assigneeName.charAt(0) : '?'}
+                              </Avatar>
+                            </Tooltip>
+                          ) : (
+                            <Avatar
+                              sx={{ width: 24, height: 24, fontSize: 12, bgcolor: '#DFE1E6', color: '#42526E' }}
+                            >
+                              ?
+                            </Avatar>
+                          )}
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  ))
                 )}
-              </Droppable>
-
-              {/* See older items link (only for DONE) */}
-              {column.id === 'done' && (
-                <Box sx={{ textAlign: 'center', mt: 2 }}>
-                  <Button 
-                    variant="text" 
-                    size="small"
-                    startIcon={<SearchIcon />}
-                    sx={{ 
-                      textTransform: 'none',
-                      color: '#5E6C84',
-                      fontSize: '12px'
-                    }}
-                  >
-                    See older work items
-                  </Button>
-                </Box>
-              )}
-            </Box>
-          ))}
-        </Box>
-      </DragDropContext>
+              </Box>
+            </Paper>
+          </Grid>
+        ))}
+      </Grid>
     );
   };
 
-  // List View (önceki kodunuz aynı kalacak)
-  const ListView = () => (
-    <TableContainer component={Paper}>
-      <Table>
-        <TableHead>
-          <TableRow sx={{ backgroundColor: '#F4F5F7' }}>
-            <TableCell>Issue</TableCell>
-            <TableCell>Type</TableCell>
-            <TableCell>Status</TableCell>
-            <TableCell>Priority</TableCell>
-            <TableCell>Project</TableCell>
-            <TableCell>Assignee</TableCell>
-            <TableCell>Updated</TableCell>
-            <TableCell>Actions</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {issues.map((issue) => (
-            <TableRow key={issue.id} hover>
-              <TableCell>
-                <Box>
-                  <Typography variant="body2" fontWeight="bold">
-                    #{issue.id} {issue.title}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {issue.description.substring(0, 50)}...
-                  </Typography>
-                </Box>
-              </TableCell>
-              <TableCell>
-                <Box display="flex" alignItems="center" gap={1}>
-                  {issueTypes[issue.type].icon}
-                  <Typography variant="body2">
-                    {issueTypes[issue.type].label}
-                  </Typography>
-                </Box>
-              </TableCell>
-              <TableCell>
-                <Chip
-                  label={issue.status.replace('_', ' ').toUpperCase()}
-                  size="small"
-                  sx={{
-                    backgroundColor: statusConfig[issue.status]?.color || '#DFE1E6',
-                    color: '#172B4D',
-                  }}
-                />
-              </TableCell>
-              <TableCell>
-                <Box display="flex" alignItems="center" gap={1}>
-                  {priorityIcons[issue.priority]}
-                  <Typography variant="body2" sx={{ textTransform: 'capitalize' }}>
-                    {issue.priority}
-                  </Typography>
-                </Box>
-              </TableCell>
-              <TableCell>
-                <Typography variant="body2">
-                  {getProjectName(issue.projectId)}
-                </Typography>
-              </TableCell>
-              <TableCell>
-                <Box display="flex" alignItems="center" gap={1}>
-                  <Avatar sx={{ width: 24, height: 24, fontSize: 12 }}>
-                    {issue.assignee?.charAt(0) || 'U'}
-                  </Avatar>
-                  <Typography variant="body2">
-                    {issue.assignee || 'Unassigned'}
-                  </Typography>
-                </Box>
-              </TableCell>
-              <TableCell>
-                <Typography variant="body2" color="text.secondary">
-                  {new Date(issue.updatedAt).toLocaleDateString()}
-                </Typography>
-              </TableCell>
-              <TableCell>
-                <IconButton size="small" onClick={(e) => handleMenuClick(e, issue)}>
-                  <MoreVertIcon />
-                </IconButton>
-              </TableCell>
+  // Liste Görünümü bileşeni
+  const ListView = () => {
+    return (
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead sx={{ bgcolor: '#F4F5F7' }}>
+            <TableRow>
+              <TableCell>Type</TableCell>
+              <TableCell>Title</TableCell>
+              <TableCell>Status</TableCell>
+              <TableCell>Priority</TableCell>
+              <TableCell>Assignee</TableCell>
+              <TableCell>Actions</TableCell>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
-  );
+          </TableHead>
+          <TableBody>
+            {issues.map((issue) => (
+              <TableRow key={issue.id} hover>
+                <TableCell>
+                  {issue.type === 'bug' && <BugIcon color="error" />}
+                  {issue.type === 'task' && <TaskIcon color="primary" />}
+                  {issue.type === 'story' && <StoryIcon color="success" />}
+                </TableCell>
+                <TableCell>{issue.title}</TableCell>
+                <TableCell>
+                  <Chip
+                    label={
+                      issue.status === 'todo' ? 'To Do' :
+                      issue.status === 'in_progress' ? 'In Progress' : 'Done'
+                    }
+                    size="small"
+                    sx={{
+                      bgcolor: 
+                        issue.status === 'todo' ? '#DFE1E6' :
+                        issue.status === 'in_progress' ? '#DEEBFF' : '#E3FCEF',
+                      color: 
+                        issue.status === 'todo' ? '#42526E' :
+                        issue.status === 'in_progress' ? '#0052CC' : '#006644'
+                    }}
+                  />
+                </TableCell>
+                <TableCell>
+                  <Chip
+                    size="small"
+                    label={issue.priority}
+                    sx={{
+                      bgcolor: 
+                        issue.priority === 'high' ? '#FFEBE6' :
+                        issue.priority === 'medium' ? '#FFFAE6' :
+                        issue.priority === 'critical' ? '#FF8F73' : '#E3FCEF',
+                      color: 
+                        issue.priority === 'high' ? '#DE350B' :
+                        issue.priority === 'medium' ? '#FF8B00' :
+                        issue.priority === 'critical' ? '#BF2600' : '#006644'
+                    }}
+                  />
+                </TableCell>
+                <TableCell>
+                  {issue.assigneeName ? (
+                    <Box display="flex" alignItems="center" gap={1}>
+                      <Avatar sx={{ width: 24, height: 24, fontSize: 12 }}>
+                        {issue.assigneeName.charAt(0)}
+                      </Avatar>
+                      <Typography variant="body2">
+                        {issue.assigneeName}
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <Typography variant="body2" color="text.secondary">
+                      Unassigned
+                    </Typography>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <IconButton size="small" onClick={(e) => handleOpenMenu(e, issue)}>
+                    <MoreVertIcon fontSize="small" />
+                  </IconButton>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    );
+  };
 
   return (
     <Box>
@@ -578,22 +535,77 @@ const Issues = () => {
               backgroundColor: '#0052CC',
               '&:hover': { backgroundColor: '#0065FF' },
             }}
+            disabled={loading}
           >
             Create Issue
           </Button>
         </Box>
       </Box>
 
-      {/* View Tabs */}
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-        <Tabs value={currentTab} onChange={(e, newValue) => setCurrentTab(newValue)}>
-          <Tab label="Kanban Board" />
-          <Tab label="List View" />
-        </Tabs>
-      </Box>
+      {/* Yükleme ve Hata Durumları */}
+      {loading ? (
+        <Box display="flex" justifyContent="center" alignItems="center" height="50vh">
+          <CircularProgress />
+        </Box>
+      ) : error ? (
+        <Box 
+          display="flex" 
+          flexDirection="column" 
+          justifyContent="center" 
+          alignItems="center" 
+          height="50vh"
+        >
+          <Typography color="error" variant="h6" gutterBottom>
+            {error}
+          </Typography>
+          <Button 
+            variant="outlined" 
+            color="primary" 
+            onClick={() => fetchData()} 
+            startIcon={<RefreshIcon />}
+          >
+            Yeniden Dene
+          </Button>
+        </Box>
+      ) : (
+        <>
+          {/* View Tabs */}
+          <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+            <Tabs value={currentTab} onChange={(e, newValue) => setCurrentTab(newValue)}>
+              <Tab label="Kanban Board" />
+              <Tab label="List View" />
+            </Tabs>
+          </Box>
 
-      {/* Content */}
-      {currentTab === 0 ? <KanbanBoard /> : <ListView />}
+          {/* Content */}
+          {issues.length === 0 ? (
+            <Box 
+              display="flex" 
+              flexDirection="column" 
+              justifyContent="center" 
+              alignItems="center" 
+              height="50vh"
+              sx={{ color: 'text.secondary' }}
+            >
+              <AssignmentIcon sx={{ fontSize: 60, opacity: 0.5, mb: 2 }} />
+              <Typography variant="h6" gutterBottom>
+                Henüz hiç issue eklenmemiş
+              </Typography>
+              <Button 
+                variant="contained" 
+                color="primary" 
+                onClick={() => handleOpenDialog()}
+                startIcon={<AddIcon />}
+                sx={{ mt: 2 }}
+              >
+                İlk Issue'yu Oluştur
+              </Button>
+            </Box>
+          ) : (
+            currentTab === 0 ? <KanbanBoard /> : <ListView />
+          )}
+        </>
+      )}
 
       {/* Context Menu */}
       <Menu
@@ -614,111 +626,190 @@ const Issues = () => {
         </MenuItem>
       </Menu>
 
-      {/* Add/Edit Issue Dialog - önceki kodunuz aynı kalacak */}
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
+      {/* Add/Edit Issue Dialog */}
+      <Dialog 
+        open={openDialog} 
+        onClose={handleCloseDialog}
+        fullWidth
+        maxWidth="md"
+      >
         <DialogTitle>
           {editingIssue ? 'Edit Issue' : 'Create New Issue'}
         </DialogTitle>
-        <DialogContent>
-          <Box sx={{ pt: 1 }}>
-            <TextField
-              fullWidth
-              label="Issue Title"
-              value={formData.title}
-              onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-              margin="normal"
-            />
-            <TextField
-              fullWidth
-              label="Description"
-              multiline
-              rows={4}
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              margin="normal"
-            />
-            <Grid container spacing={2} sx={{ mt: 1 }}>
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth>
-                  <InputLabel>Issue Type</InputLabel>
-                  <Select
-                    value={formData.type}
-                    label="Issue Type"
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                  >
-                    <MenuItem value="bug">🐛 Bug</MenuItem>
-                    <MenuItem value="task">📋 Task</MenuItem>
-                    <MenuItem value="story">📖 Story</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth>
-                  <InputLabel>Status</InputLabel>
-                  <Select
-                    value={formData.status}
-                    label="Status"
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  >
-                    <MenuItem value="todo">To Do</MenuItem>
-                    <MenuItem value="in_progress">In Progress</MenuItem>
-                    <MenuItem value="done">Done</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth>
-                  <InputLabel>Priority</InputLabel>
-                  <Select
-                    value={formData.priority}
-                    label="Priority"
-                    onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
-                  >
-                    <MenuItem value="low">Low</MenuItem>
-                    <MenuItem value="medium">Medium</MenuItem>
-                    <MenuItem value="high">High</MenuItem>
-                    <MenuItem value="critical">Critical</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <FormControl fullWidth>
-                  <InputLabel>Project</InputLabel>
-                  <Select
-                    value={formData.projectId}
-                    label="Project"
-                    onChange={(e) => setFormData({ ...formData, projectId: e.target.value })}
-                  >
-                    {projects.map((project) => (
-                      <MenuItem key={project.id} value={project.id}>
-                        {project.name}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label="Assignee"
-                  value={formData.assignee}
-                  onChange={(e) => setFormData({ ...formData, assignee: e.target.value })}
-                />
-              </Grid>
+        <DialogContent dividers>
+          <Grid container spacing={3}>
+            <Grid item xs={12}>
+              <TextField
+                name="title"
+                label="Issue Title"
+                fullWidth
+                value={formData.title}
+                onChange={handleFormChange}
+                error={Boolean(formErrors.title)}
+                helperText={formErrors.title}
+                disabled={formSubmitting}
+                required
+              />
             </Grid>
-          </Box>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth error={Boolean(formErrors.type)} required>
+                <InputLabel>Issue Type</InputLabel>
+                <Select
+                  name="type"
+                  value={formData.type}
+                  onChange={handleFormChange}
+                  label="Issue Type"
+                  disabled={formSubmitting}
+                >
+                  {issueTypeOptions.map(option => (
+                    <MenuItem key={option.value} value={option.value}>
+                      <Box display="flex" alignItems="center" gap={1}>
+                        {option.icon}
+                        {option.label}
+                      </Box>
+                    </MenuItem>
+                  ))}
+                </Select>
+                {formErrors.type && <FormHelperText>{formErrors.type}</FormHelperText>}
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth error={Boolean(formErrors.status)} required>
+                <InputLabel>Status</InputLabel>
+                <Select
+                  name="status"
+                  value={formData.status}
+                  onChange={handleFormChange}
+                  label="Status"
+                  disabled={formSubmitting}
+                >
+                  {statusOptions.map(option => (
+                    <MenuItem key={option.value} value={option.value}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                                  </Select>
+                {formErrors.status && <FormHelperText>{formErrors.status}</FormHelperText>}
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth error={Boolean(formErrors.priority)}>
+                <InputLabel>Priority</InputLabel>
+                <Select
+                  name="priority"
+                  value={formData.priority}
+                  onChange={handleFormChange}
+                  label="Priority"
+                  disabled={formSubmitting}
+                >
+                  {priorityOptions.map(option => (
+                    <MenuItem key={option.value} value={option.value}>
+                      <Box display="flex" alignItems="center" gap={1}>
+                        {option.icon}
+                        {option.label}
+                      </Box>
+                    </MenuItem>
+                  ))}
+                </Select>
+                {formErrors.priority && <FormHelperText>{formErrors.priority}</FormHelperText>}
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth error={Boolean(formErrors.projectId)} required>
+                <InputLabel>Project</InputLabel>
+                <Select
+                  name="projectId"
+                  value={formData.projectId}
+                  onChange={handleFormChange}
+                  label="Project"
+                  disabled={formSubmitting}
+                >
+                  {projects.map(project => (
+                    <MenuItem key={project.id} value={project.id}>
+                      {project.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+                {formErrors.projectId && <FormHelperText>{formErrors.projectId}</FormHelperText>}
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Assignee</InputLabel>
+                <Select
+                  name="assigneeId"
+                  value={formData.assigneeId}
+                  onChange={handleFormChange}
+                  label="Assignee"
+                  disabled={formSubmitting}
+                >
+                  <MenuItem value="">
+                    <em>Unassigned</em>
+                  </MenuItem>
+                  {users.map(user => {
+                    // userID için güvenli bir değer oluştur
+                    const userID = user.userID != null ? user.userID.toString() : '';
+                    
+                    return (
+                      <MenuItem key={userID || `user-${Math.random()}`} value={userID}>
+                        <Box display="flex" alignItems="center" gap={1}>
+                          <Avatar sx={{ width: 24, height: 24, fontSize: 12 }}>
+                            {user.firstName?.charAt(0) || "?"}
+                          </Avatar>
+                          {user.firstName || ''} {user.lastName || ''}
+                        </Box>
+                      </MenuItem>
+                    );
+                  })}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                name="description"
+                label="Description"
+                multiline
+                rows={4}
+                fullWidth
+                value={formData.description}
+                onChange={handleFormChange}
+                disabled={formSubmitting}
+              />
+            </Grid>
+          </Grid>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseDialog}>Cancel</Button>
+          <Button onClick={handleCloseDialog} disabled={formSubmitting}>
+            Cancel
+          </Button>
           <Button 
             onClick={handleSaveIssue} 
-            variant="contained"
-            disabled={!formData.title.trim()}
+            variant="contained" 
+            color="primary"
+            disabled={formSubmitting}
           >
-            {editingIssue ? 'Update' : 'Create'}
+            {formSubmitting ? 'Saving...' : (editingIssue ? 'Update Issue' : 'Create Issue')}
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Notification */}
+      <Snackbar 
+        open={Boolean(notification)} 
+        autoHideDuration={5000} 
+        onClose={handleCloseNotification}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        {notification && (
+          <Alert 
+            onClose={handleCloseNotification} 
+            severity={notification.type} 
+            sx={{ width: '100%' }}
+          >
+            {notification.message}
+          </Alert>
+        )}
+      </Snackbar>
     </Box>
   );
 };

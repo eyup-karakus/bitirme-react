@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+// src/components/Dashboard.jsx (optimized version)
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -18,161 +19,335 @@ import {
   Button,
   IconButton,
   Pagination,
-  Stack,
+  CircularProgress,
+  Alert,
+  Skeleton,
 } from '@mui/material';
 import {
-  TrendingUp as TrendingUpIcon,
   Assignment as ProjectIcon,
   BugReport as IssueIcon,
   Timeline as SprintIcon,
   Warning as WarningIcon,
   ArrowForward as ArrowForwardIcon,
-  Visibility as ViewIcon,
   BugReport,
   Assignment,
   Star,
   MoreVert as MoreVertIcon,
   Settings as SettingsIcon,
+  Refresh as RefreshIcon,
 } from '@mui/icons-material';
-import { useProject } from '../context/ProjectContext';
 import { useNavigate } from 'react-router-dom';
+import { dashboardService } from '../services/dashboardService';
 
 const Dashboard = () => {
-  const { projects } = useProject();
   const navigate = useNavigate();
   const [currentPage, setCurrentPage] = useState(1);
   const issuesPerPage = 8;
 
-  // Mock data for dashboard
-  const [issues] = useState([
-    { id: 1, title: 'Fix login authentication bug', type: 'bug', status: 'in_progress', priority: 'high', assignee: 'John Doe', project: 'E-Commerce Platform' },
-    { id: 2, title: 'Implement user dashboard', type: 'story', status: 'todo', priority: 'medium', assignee: 'Alice Johnson', project: 'E-Commerce Platform' },
-    { id: 3, title: 'Setup CI/CD pipeline', type: 'task', status: 'done', priority: 'high', assignee: 'Charlie Brown', project: 'Mobile App Development' },
-    { id: 4, title: 'Mobile responsive design', type: 'story', status: 'in_progress', priority: 'medium', assignee: 'David Lee', project: 'Data Analytics Dashboard' },
-    { id: 5, title: 'Database optimization', type: 'task', status: 'todo', priority: 'low', assignee: 'Emma Wilson', project: 'E-Commerce Platform' },
-    { id: 6, title: 'API security improvements', type: 'bug', status: 'in_progress', priority: 'critical', assignee: 'Frank Miller', project: 'Mobile App Development' },
-    { id: 7, title: 'User interface redesign', type: 'story', status: 'todo', priority: 'medium', assignee: 'Grace Chen', project: 'Data Analytics Dashboard' },
-    { id: 8, title: 'Performance optimization', type: 'task', status: 'done', priority: 'high', assignee: 'Henry Davis', project: 'E-Commerce Platform' },
-    { id: 9, title: 'Email notification system', type: 'story', status: 'in_progress', priority: 'low', assignee: 'Ivy Zhang', project: 'Mobile App Development' },
-    { id: 10, title: 'Data backup automation', type: 'task', status: 'todo', priority: 'medium', assignee: 'Jack Wilson', project: 'Data Analytics Dashboard' },
-    { id: 11, title: 'Cross-browser compatibility', type: 'bug', status: 'done', priority: 'high', assignee: 'Kate Brown', project: 'E-Commerce Platform' },
-    { id: 12, title: 'Payment gateway integration', type: 'story', status: 'in_progress', priority: 'critical', assignee: 'Liam Johnson', project: 'Mobile App Development' },
-    { id: 13, title: 'Search functionality enhancement', type: 'task', status: 'todo', priority: 'medium', assignee: 'Mia Davis', project: 'Data Analytics Dashboard' },
-    { id: 14, title: 'Social media login integration', type: 'story', status: 'done', priority: 'low', assignee: 'Noah Wilson', project: 'E-Commerce Platform' },
-    { id: 15, title: 'Real-time notifications', type: 'task', status: 'in_progress', priority: 'high', assignee: 'Olivia Chen', project: 'Mobile App Development' },
-  ]);
+  // State
+  const [dashboardData, setDashboardData] = useState({
+    projects: [],
+    issues: [],
+    sprints: [],
+    users: [],
+  });
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Calculate statistics
-  const totalProjects = projects.length;
-  const activeProjects = projects.filter(p => p.status === 'active').length;
-  const completedProjects = projects.filter(p => p.status === 'completed').length;
-  
-  const totalIssues = issues.length;
-  const completedIssues = issues.filter(i => i.status === 'done').length;
-  const inProgressIssues = issues.filter(i => i.status === 'in_progress').length;
-  const todoIssues = issues.filter(i => i.status === 'todo').length;
+  // Load data on component mount
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
 
-  const highPriorityIssues = issues.filter(i => i.priority === 'high').length;
-  const criticalIssues = issues.filter(i => i.priority === 'critical').length;
+  const loadDashboardData = async (isRefresh = false) => {
+    try {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      setError(null);
+
+      const data = await dashboardService.getDashboardData();
+      
+      // Hata kontrolü
+      const hasErrors = Object.values(data.errors).some(error => error !== null);
+      if (hasErrors) {
+        console.warn('Some data failed to load:', data.errors);
+      }
+
+      setDashboardData(data);
+      
+      // İstatistikleri hesapla
+      const calculatedStats = dashboardService.calculateStats(
+        data.projects,
+        data.issues,
+        data.sprints
+      );
+      setStats(calculatedStats);
+
+    } catch (err) {
+      console.error('Error loading dashboard data:', err);
+      setError('Failed to load dashboard data. Please try again.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const handleRefresh = () => {
+    loadDashboardData(true);
+  };
 
   // Pagination logic
-  const totalPages = Math.ceil(issues.length / issuesPerPage);
+  const totalPages = Math.ceil(dashboardData.issues.length / issuesPerPage);
   const startIndex = (currentPage - 1) * issuesPerPage;
-  const currentIssues = issues.slice(startIndex, startIndex + issuesPerPage);
+  const currentIssues = dashboardData.issues.slice(startIndex, startIndex + issuesPerPage);
 
   const handlePageChange = (event, value) => {
     setCurrentPage(value);
   };
 
+  // Helper functions
   const getProjectProgress = (project) => {
-    if (!project.issues) return Math.floor(Math.random() * 100);
-    return Math.round((project.completedIssues / project.issues) * 100);
+    if (project.issues && project.completedIssues && project.issues > 0) {
+      return Math.round((project.completedIssues / project.issues) * 100);
+    }
+    return 0;
   };
 
-  const getStatusColor = (status) => {
+  const getStatusColor = (status, statusId) => {
+    let normalizedStatus = status;
+    if (statusId) {
+      const statusMap = { 1: 'todo', 2: 'in_progress', 3: 'in_progress', 4: 'done' };
+      normalizedStatus = statusMap[statusId] || 'todo';
+    }
+
     const colors = {
       todo: { bg: '#F4F5F7', color: '#42526E' },
       in_progress: { bg: '#FFF0B3', color: '#974F0C' },
       done: { bg: '#E3FCEF', color: '#006644' },
     };
-    return colors[status] || { bg: '#F4F5F7', color: '#42526E' };
+    return colors[normalizedStatus] || { bg: '#F4F5F7', color: '#42526E' };
   };
 
-  const getPriorityColor = (priority) => {
+  const getPriorityColor = (priority, priorityId) => {
+    let normalizedPriority = priority;
+    if (priorityId) {
+      const priorityMap = { 1: 'low', 2: 'medium', 3: 'high', 4: 'critical' };
+      normalizedPriority = priorityMap[priorityId] || 'medium';
+    }
+
     const colors = {
       low: { bg: '#E3FCEF', color: '#006644' },
       medium: { bg: '#FFF4E6', color: '#974F0C' },
       high: { bg: '#FFEBE6', color: '#BF2600' },
       critical: { bg: '#FFEBE6', color: '#DE350B' },
     };
-    return colors[priority] || { bg: '#E3FCEF', color: '#006644' };
+    return colors[normalizedPriority] || { bg: '#E3FCEF', color: '#006644' };
   };
 
-  const getTypeIcon = (type) => {
+  const getTypeIcon = (type, typeId) => {
+    let normalizedType = type;
+    if (typeId) {
+      const typeMap = { 1: 'task', 2: 'bug', 3: 'story' };
+      normalizedType = typeMap[typeId] || 'task';
+    }
+
     const icons = {
       bug: <BugReport sx={{ color: '#FF5630', fontSize: 16 }} />,
       task: <Assignment sx={{ color: '#0052CC', fontSize: 16 }} />,
       story: <Star sx={{ color: '#36B37E', fontSize: 16 }} />,
     };
-    return icons[type] || <Assignment sx={{ fontSize: 16 }} />;
+    return icons[normalizedType] || <Assignment sx={{ fontSize: 16 }} />;
   };
 
-  const statsCards = [
+  const getAssigneeName = (issue) => {
+    if (issue.assigneeName) return issue.assigneeName;
+    if (issue.assigneeId) {
+      const user = dashboardData.users.find(u => u.id === issue.assigneeId.toString());
+      return user ? user.fullName : 'Unknown User';
+    }
+    return 'Unassigned';
+  };
+
+  const getProjectName = (issue) => {
+    if (issue.projectName) return issue.projectName;
+    if (issue.projectId) {
+      const project = dashboardData.projects.find(p => p.id === issue.projectId.toString());
+      return project ? project.name : 'Unknown Project';
+    }
+    return 'No Project';
+  };
+
+  const formatStatus = (status, statusId) => {
+    let displayStatus = status;
+    if (statusId) {
+      const statusMap = { 1: 'TO DO', 2: 'IN PROGRESS', 3: 'IN PROGRESS', 4: 'DONE' };
+      displayStatus = statusMap[statusId] || 'TO DO';
+    }
+    return displayStatus?.replace('_', ' ').toUpperCase() || 'TO DO';
+  };
+
+  const formatPriority = (priority, priorityId) => {
+    let displayPriority = priority;
+    if (priorityId) {
+      const priorityMap = { 1: 'low', 2: 'medium', 3: 'high', 4: 'critical' };
+      displayPriority = priorityMap[priorityId] || 'medium';
+    }
+    return displayPriority?.toUpperCase() || 'MEDIUM';
+  };
+
+  // Stats cards configuration
+  const statsCards = stats ? [
     {
       title: 'Total Projects',
-      value: totalProjects,
-      subtitle: `${activeProjects} active • ${completedProjects} completed`,
+      value: stats.projects.total,
+      subtitle: `${stats.projects.active} active • ${stats.projects.completed} completed`,
       icon: <ProjectIcon sx={{ fontSize: 28 }} />,
       color: '#0052CC',
       bgColor: '#E3F2FD',
     },
     {
       title: 'Total Issues',
-      value: totalIssues,
-      subtitle: `${completedIssues} completed • ${inProgressIssues} in progress`,
+      value: stats.issues.total,
+      subtitle: `${stats.issues.done} completed • ${stats.issues.inProgress} in progress`,
       icon: <IssueIcon sx={{ fontSize: 28 }} />,
       color: '#FF5630',
       bgColor: '#FFEBE6',
     },
     {
       title: 'Active Sprints',
-      value: 3,
-      subtitle: '2 on track • 1 at risk',
+      value: stats.sprints.active,
+      subtitle: `${stats.sprints.planned} planned • ${stats.sprints.completed} completed`,
       icon: <SprintIcon sx={{ fontSize: 28 }} />,
       color: '#36B37E',
       bgColor: '#E3FCEF',
     },
     {
       title: 'High Priority',
-      value: highPriorityIssues + criticalIssues,
+      value: stats.issues.highPriority,
       subtitle: 'Needs immediate attention',
       icon: <WarningIcon sx={{ fontSize: 28 }} />,
       color: '#FF8B00',
       bgColor: '#FFF4E6',
     },
-  ];
+  ] : [];
+
+  // Loading skeleton
+  const StatCardSkeleton = () => (
+    <Card sx={{ height: '180px', border: '1px solid #DFE1E6', borderRadius: '12px' }}>
+      <CardContent sx={{ p: 4 }}>
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={2.5}>
+          <Box sx={{ flex: 1 }}>
+            <Skeleton variant="text" width={80} height={60} />
+            <Skeleton variant="text" width={120} height={24} />
+          </Box>
+          <Skeleton variant="circular" width={64} height={64} />
+        </Box>
+        <Skeleton variant="text" width="80%" height={16} />
+      </CardContent>
+    </Card>
+  );
+
+  if (loading) {
+    return (
+      <Box sx={{ minHeight: 'calc(100vh - 112px)', backgroundColor: '#F0F4F8', pb: 3 }}>
+        {/* Header */}
+        <Box mb={4} sx={{ backgroundColor: 'white', p: 3, borderBottom: '1px solid #DFE1E6' }}>
+          <Typography variant="h4" fontWeight="600" color="#172B4D" mb={1}>
+            Dashboard
+          </Typography>
+          <Typography variant="body1" color="#6B778C" sx={{ fontSize: '15px' }}>
+            Loading your dashboard...
+          </Typography>
+        </Box>
+
+        <Box sx={{ px: 3 }}>
+          {/* Loading Statistics Cards */}
+          <Grid container spacing={4} mb={4}>
+            {[1, 2, 3, 4].map((index) => (
+              <Grid item xs={12} sm={6} md={4} lg={6} xl={3} key={index}>
+                <StatCardSkeleton />
+              </Grid>
+            ))}
+          </Grid>
+
+          {/* Loading Project Overview */}
+          <Paper sx={{ p: 3, mb: 4, backgroundColor: 'white', border: '1px solid #DFE1E6', borderRadius: '8px' }}>
+            <Skeleton variant="text" width={200} height={32} mb={3} />
+            <Grid container spacing={3}>
+              {[1, 2, 3, 4].map((index) => (
+                <Grid item xs={12} sm={6} lg={3} key={index}>
+                  <Skeleton variant="rectangular" height={180} sx={{ borderRadius: '8px' }} />
+                </Grid>
+              ))}
+            </Grid>
+          </Paper>
+
+          {/* Loading Recent Issues */}
+          <Paper sx={{ p: 3, backgroundColor: 'white', border: '1px solid #DFE1E6', borderRadius: '8px' }}>
+            <Skeleton variant="text" width={200} height={32} mb={3} />
+            <Box>
+              {[1, 2, 3, 4, 5].map((index) => (
+                <Skeleton key={index} variant="rectangular" height={60} sx={{ mb: 1, borderRadius: '4px' }} />
+              ))}
+            </Box>
+          </Paper>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box sx={{ minHeight: 'calc(100vh - 112px)', backgroundColor: '#F0F4F8', p: 3 }}>
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+        <Button 
+          variant="outlined" 
+          onClick={() => loadDashboardData()}
+          startIcon={<RefreshIcon />}
+        >
+          Retry
+        </Button>
+      </Box>
+    );
+  }
 
   return (
-    <Box sx={{ 
-      minHeight: 'calc(100vh - 112px)', 
-      backgroundColor: '#F0F4F8',
-      pb: 3 
-    }}>
+    <Box sx={{ minHeight: 'calc(100vh - 112px)', backgroundColor: '#F0F4F8', pb: 3 }}>
       {/* Header */}
       <Box mb={4} sx={{ backgroundColor: 'white', p: 3, borderBottom: '1px solid #DFE1E6' }}>
-        <Typography variant="h4" fontWeight="600" color="#172B4D" mb={1}>
-          Dashboard
-        </Typography>
-        <Typography variant="body1" color="#6B778C" sx={{ fontSize: '15px' }}>
-          Welcome back! Here's what's happening with your projects.
-        </Typography>
+        <Box display="flex" justifyContent="space-between" alignItems="center">
+          <Box>
+            <Typography variant="h4" fontWeight="600" color="#172B4D" mb={1}>
+              Dashboard
+            </Typography>
+            <Typography variant="body1" color="#6B778C" sx={{ fontSize: '15px' }}>
+              Welcome back! Here's what's happening with your projects.
+            </Typography>
+          </Box>
+          <Button
+            variant="outlined"
+            startIcon={refreshing ? <CircularProgress size={16} /> : <RefreshIcon />}
+            onClick={handleRefresh}
+            disabled={refreshing}
+            sx={{ textTransform: 'none' }}
+          >
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </Button>
+        </Box>
       </Box>
 
       <Box sx={{ px: 3 }}>
         {/* Statistics Cards */}
         <Grid container spacing={4} mb={4}>
           {statsCards.map((card, index) => (
-            <Grid item xs={12} sm={6} md={4} lg={6} xl={3} key={index}> {/* lg: 3'den lg: 6'ya değiştirildi, md ve xl eklendi */}
+            <Grid item xs={12} sm={6} md={4} lg={6} xl={3} key={index}>
               <Card 
                 sx={{ 
                   height: '180px',
@@ -191,7 +366,7 @@ const Dashboard = () => {
               >
                 <CardContent sx={{ width: '100%', p: 4 }}>
                   <Box display="flex" justifyContent="space-between" alignItems="center" mb={2.5}>
-                    <Box sx={{ flex: 1 }}> {/* flex: 1 eklendi */}
+                    <Box sx={{ flex: 1 }}>
                       <Typography variant="h3" fontWeight="600" color="#172B4D" sx={{ fontSize: '3rem', lineHeight: 1 }}>
                         {card.value}
                       </Typography>
@@ -205,12 +380,10 @@ const Dashboard = () => {
                         borderRadius: '12px',
                         p: 2.5,
                         color: card.color,
-                        ml: 2 // margin-left eklendi
+                        ml: 2
                       }}
                     >
-                      <Box sx={{ fontSize: 32 }}>
-                        {React.cloneElement(card.icon, { sx: { fontSize: 32 } })}
-                      </Box>
+                      {React.cloneElement(card.icon, { sx: { fontSize: 32 } })}
                     </Box>
                   </Box>
                   <Typography variant="caption" color="#6B778C" sx={{ fontSize: '13px' }}>
@@ -252,77 +425,120 @@ const Dashboard = () => {
             </Button>
           </Box>
           
-          <Grid container spacing={3}>
-            {projects.slice(0, 4).map((project) => (
-              <Grid item xs={12} sm={6} lg={3} key={project.id}>
-                <Card 
-                  sx={{ 
-                    height: '180px',
-                    backgroundColor: 'white',
-                    border: '1px solid #DFE1E6',
-                    borderRadius: '8px',
-                    transition: 'all 0.2s ease-in-out',
-                    '&:hover': {
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                      transform: 'translateY(-2px)',
-                    }
-                  }}
-                >
-                  <CardContent sx={{ p: 2.5, height: '100%', display: 'flex', flexDirection: 'column' }}>
-                    <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
-                      <Box sx={{ flexGrow: 1 }}>
-                        <Typography variant="subtitle1" fontWeight="600" color="#172B4D" mb={0.5}>
-                          {project.name}
-                        </Typography>
-                        <Typography variant="body2" color="#6B778C" sx={{ fontSize: '12px' }}>
-                          Company-managed software
-                        </Typography>
-                      </Box>
-                      
-                      <IconButton 
-                        size="small" 
-                        onClick={() => navigate(`/projects/${project.id}`)}
-                        sx={{ 
-                          color: '#6B778C',
-                          '&:hover': { color: '#0052CC', backgroundColor: '#E3F2FD' }
-                        }}
-                      >
-                        <SettingsIcon sx={{ fontSize: 16 }} />
-                      </IconButton>
-                    </Box>
-
-                    <Box sx={{ flexGrow: 1 }}>
-                      <Typography variant="body2" color="#0052CC" sx={{ fontSize: '12px', fontWeight: 500, mb: 1 }}>
-                        Quick links
-                      </Typography>
-                      
-                      <Box mb={2}>
-                        <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.5}>
-                          <Typography variant="body2" color="#172B4D" sx={{ fontSize: '12px' }}>
-                            My open work items
+          {dashboardData.projects.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <Typography variant="body2" color="#6B778C" mb={2}>
+                No projects found. Create your first project to get started.
+              </Typography>
+              <Button
+                variant="contained"
+                onClick={() => navigate('/projects')}
+              >
+                Create Project
+              </Button>
+            </Box>
+          ) : (
+            <Grid container spacing={3}>
+              {dashboardData.projects.slice(0, 4).map((project) => (
+                <Grid item xs={12} sm={6} lg={3} key={project.id}>
+                  <Card 
+                    sx={{ 
+                      height: '180px',
+                      backgroundColor: 'white',
+                      border: '1px solid #DFE1E6',
+                      borderRadius: '8px',
+                      transition: 'all 0.2s ease-in-out',
+                      cursor: 'pointer',
+                      '&:hover': {
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                        transform: 'translateY(-2px)',
+                      }
+                    }}
+                    onClick={() => navigate(`/projects/${project.id}`)}
+                  >
+                    <CardContent sx={{ p: 2.5, height: '100%', display: 'flex', flexDirection: 'column' }}>
+                      <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
+                        <Box sx={{ flexGrow: 1 }}>
+                          <Typography variant="subtitle1" fontWeight="600" color="#172B4D" mb={0.5}>
+                            {project.name}
                           </Typography>
-                          <Typography variant="body2" fontWeight="600" color="#172B4D" sx={{ fontSize: '12px' }}>
-                            {Math.floor(Math.random() * 15)}
+                          <Typography variant="body2" color="#6B778C" sx={{ fontSize: '12px' }}>
+                            {project.description || 'No description'}
                           </Typography>
                         </Box>
                         
-                        <Typography variant="body2" color="#6B778C" sx={{ fontSize: '12px', mb: 1 }}>
-                          Done work items
+                        <IconButton 
+                          size="small" 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/projects/${project.id}`);
+                          }}
+                          sx={{ 
+                            color: '#6B778C',
+                            '&:hover': { color: '#0052CC', backgroundColor: '#E3F2FD' }
+                          }}
+                        >
+                          <SettingsIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Box>
+
+                      <Box sx={{ flexGrow: 1 }}>
+                        <Typography variant="body2" color="#0052CC" sx={{ fontSize: '12px', fontWeight: 500, mb: 1 }}>
+                          Quick stats
                         </Typography>
                         
-                        <Typography variant="body2" color="#0052CC" sx={{ fontSize: '12px', fontWeight: 500 }}>
-                          {Math.floor(Math.random() * 5) + 1} board{Math.floor(Math.random() * 5) + 1 > 1 ? 's' : ''}
-                        </Typography>
+                        <Box mb={2}>
+                          <Box display="flex" justifyContent="space-between" alignItems="center" mb={0.5}>
+                            <Typography variant="body2" color="#172B4D" sx={{ fontSize: '12px' }}>
+                              Total issues
+                            </Typography>
+                            <Typography variant="body2" fontWeight="600" color="#172B4D" sx={{ fontSize: '12px' }}>
+                              {project.issues || 0}
+                            </Typography>
+                          </Box>
+                          
+                          <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                            <Typography variant="body2" color="#6B778C" sx={{ fontSize: '12px' }}>
+                              Completed
+                            </Typography>
+                            <Typography variant="body2" fontWeight="600" color="#36B37E" sx={{ fontSize: '12px' }}>
+                              {project.completedIssues || 0}
+                            </Typography>
+                          </Box>
+                          
+                          <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                            <Typography variant="body2" color="#6B778C" sx={{ fontSize: '12px' }}>
+                              Progress
+                            </Typography>
+                            <Typography variant="body2" fontWeight="600" color="#172B4D" sx={{ fontSize: '12px' }}>
+                              {getProjectProgress(project)}%
+                            </Typography>
+                          </Box>
+
+                          <LinearProgress
+                            variant="determinate"
+                            value={getProjectProgress(project)}
+                            sx={{
+                              height: 4,
+                              borderRadius: 2,
+                              backgroundColor: '#F4F5F7',
+                              '& .MuiLinearProgress-bar': {
+                                backgroundColor: '#36B37E',
+                                borderRadius: 2,
+                              },
+                            }}
+                          />
+                        </Box>
                       </Box>
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))}
-          </Grid>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+          )}
         </Paper>
 
-        {/* Recent Issues - Full Width */}
+        {/* Recent Issues */}
         <Paper 
           sx={{ 
             p: 3,
@@ -351,145 +567,186 @@ const Dashboard = () => {
             </Button>
           </Box>
           
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow sx={{ backgroundColor: '#F4F5F7' }}>
-                  <TableCell sx={{ fontWeight: 600, color: '#6B778C', fontSize: '12px', py: 1.5 }}>
-                    Issue
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#6B778C', fontSize: '12px', py: 1.5 }}>
-                    Type
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#6B778C', fontSize: '12px', py: 1.5 }}>
-                    Status
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#6B778C', fontSize: '12px', py: 1.5 }}>
-                    Priority
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#6B778C', fontSize: '12px', py: 1.5 }}>
-                    Assignee
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#6B778C', fontSize: '12px', py: 1.5 }}>
-                    Project
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600, color: '#6B778C', fontSize: '12px', py: 1.5, width: 40 }}>
-                  </TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {currentIssues.map((issue) => (
-                  <TableRow 
-                    key={issue.id} 
-                    hover
-                    sx={{ 
-                      '&:hover': { backgroundColor: '#F4F5F7' },
-                      cursor: 'pointer',
-                    }}
-                    onClick={() => navigate(`/issues/${issue.id}`)}
-                  >
-                    <TableCell sx={{ py: 2 }}>
-                      <Box>
-                        <Typography variant="body2" fontWeight="600" color="#0052CC" sx={{ fontSize: '13px' }}>
-                          #{issue.id}
-                        </Typography>
-                        <Typography 
-                          variant="body2" 
-                          color="#172B4D" 
-                          sx={{ 
-                            fontSize: '13px',
-                            mt: 0.5
-                          }}
-                        >
-                          {issue.title}
-                        </Typography>
-                      </Box>
-                    </TableCell>
-                    <TableCell sx={{ py: 2 }}>
-                      <Box display="flex" alignItems="center" gap={1}>
-                        {getTypeIcon(issue.type)}
-                        <Typography variant="body2" color="#6B778C" sx={{ fontSize: '12px', textTransform: 'capitalize' }}>
-                          {issue.type}
-                        </Typography>
-                      </Box>
-                    </TableCell>
-                    <TableCell sx={{ py: 2 }}>
-                      <Chip
-                        label={issue.status.replace('_', ' ').toUpperCase()}
-                        size="small"
-                        sx={{
-                          backgroundColor: getStatusColor(issue.status).bg,
-                          color: getStatusColor(issue.status).color,
-                          fontWeight: 600,
-                          fontSize: '10px',
-                          height: '22px',
-                        }}
-                      />
-                    </TableCell>
-                    <TableCell sx={{ py: 2 }}>
-                      <Chip
-                        label={issue.priority.toUpperCase()}
-                        size="small"
-                        sx={{
-                          backgroundColor: getPriorityColor(issue.priority).bg,
-                          color: getPriorityColor(issue.priority).color,
-                          fontWeight: 600,
-                          fontSize: '10px',
-                          height: '22px',
-                        }}
-                      />
-                    </TableCell>
-                    <TableCell sx={{ py: 2 }}>
-                      <Box display="flex" alignItems="center" gap={1}>
-                        <Avatar sx={{ width: 24, height: 24, fontSize: 11, bgcolor: '#0052CC' }}>
-                          {issue.assignee?.charAt(0)}
-                        </Avatar>
-                        <Typography variant="body2" color="#172B4D" sx={{ fontSize: '12px' }}>
-                          {issue.assignee}
-                        </Typography>
-                      </Box>
-                    </TableCell>
-                    <TableCell sx={{ py: 2 }}>
-                      <Typography variant="body2" color="#6B778C" sx={{ fontSize: '12px' }}>
-                        {issue.project}
-                      </Typography>
-                    </TableCell>
-                    <TableCell sx={{ py: 2 }}>
-                      <IconButton 
-                        size="small"
-                        sx={{ 
-                          color: '#6B778C',
-                          '&:hover': { color: '#0052CC' }
-                        }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                        }}
-                      >
-                        <MoreVertIcon sx={{ fontSize: 16 }} />
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <Box display="flex" justifyContent="center" mt={3}>
-              <Pagination
-                count={totalPages}
-                page={currentPage}
-                onChange={handlePageChange}
-                color="primary"
-                size="medium"
-                sx={{
-                  '& .MuiPaginationItem-root': {
-                    fontSize: '14px',
-                  }
-                }}
-              />
+          {dashboardData.issues.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <Typography variant="body2" color="#6B778C" mb={2}>
+                No issues found. Create your first issue to get started.
+              </Typography>
+              <Button
+                variant="contained"
+                onClick={() => navigate('/issues')}
+              >
+                Create Issue
+              </Button>
             </Box>
+          ) : (
+            <>
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow sx={{ backgroundColor: '#F4F5F7' }}>
+                      <TableCell sx={{ fontWeight: 600, color: '#6B778C', fontSize: '12px', py: 1.5 }}>
+                        Issue
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 600, color: '#6B778C', fontSize: '12px', py: 1.5 }}>
+                        Type
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 600, color: '#6B778C', fontSize: '12px', py: 1.5 }}>
+                        Status
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 600, color: '#6B778C', fontSize: '12px', py: 1.5 }}>
+                        Priority
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 600, color: '#6B778C', fontSize: '12px', py: 1.5 }}>
+                        Assignee
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 600, color: '#6B778C', fontSize: '12px', py: 1.5 }}>
+                        Project
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 600, color: '#6B778C', fontSize: '12px', py: 1.5, width: 40 }}>
+                      </TableCell>
+                    </TableRow>
+                  </TableHead>
+                                    <TableBody>
+                    {currentIssues.map((issue) => (
+                      <TableRow 
+                        key={issue.id}
+                        hover
+                        sx={{ 
+                          '&:hover': { backgroundColor: '#F4F5F7' },
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => navigate(`/issues/${issue.id}`)}
+                      >
+                        <TableCell sx={{ py: 2 }}>
+                          <Box>
+                            <Typography variant="body2" fontWeight="600" color="#0052CC" sx={{ fontSize: '13px' }}>
+                              #{issue.id}
+                            </Typography>
+                            <Typography 
+                              variant="body2" 
+                              color="#172B4D" 
+                              sx={{ 
+                                fontSize: '13px',
+                                mt: 0.5,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                maxWidth: '200px'
+                              }}
+                            >
+                              {issue.title || 'Untitled Issue'}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell sx={{ py: 2 }}>
+                          <Box display="flex" alignItems="center" gap={1}>
+                            {getTypeIcon(issue.type, issue.typeId)}
+                            <Typography variant="body2" color="#6B778C" sx={{ fontSize: '12px', textTransform: 'capitalize' }}>
+                              {issue.type || 'Task'}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell sx={{ py: 2 }}>
+                          <Chip
+                            label={formatStatus(issue.status, issue.statusId)}
+                            size="small"
+                            sx={{
+                              backgroundColor: getStatusColor(issue.status, issue.statusId).bg,
+                              color: getStatusColor(issue.status, issue.statusId).color,
+                              fontWeight: 600,
+                              fontSize: '10px',
+                              height: '22px',
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell sx={{ py: 2 }}>
+                          <Chip
+                            label={formatPriority(issue.priority, issue.priorityId)}
+                            size="small"
+                            sx={{
+                              backgroundColor: getPriorityColor(issue.priority, issue.priorityId).bg,
+                              color: getPriorityColor(issue.priority, issue.priorityId).color,
+                              fontWeight: 600,
+                              fontSize: '10px',
+                              height: '22px',
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell sx={{ py: 2 }}>
+                          <Box display="flex" alignItems="center" gap={1}>
+                            <Avatar sx={{ width: 24, height: 24, fontSize: 11, bgcolor: '#0052CC' }}>
+                              {getAssigneeName(issue)?.charAt(0) || 'U'}
+                            </Avatar>
+                            <Typography 
+                              variant="body2" 
+                              color="#172B4D" 
+                              sx={{ 
+                                fontSize: '12px',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                maxWidth: '120px'
+                              }}
+                            >
+                              {getAssigneeName(issue)}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                        <TableCell sx={{ py: 2 }}>
+                          <Typography 
+                            variant="body2" 
+                            color="#6B778C" 
+                            sx={{ 
+                              fontSize: '12px',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              maxWidth: '150px'
+                            }}
+                          >
+                            {getProjectName(issue)}
+                          </Typography>
+                        </TableCell>
+                        <TableCell sx={{ py: 2 }}>
+                          <IconButton 
+                            size="small"
+                            sx={{ 
+                              color: '#6B778C',
+                              '&:hover': { color: '#0052CC' }
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              // Context menu veya dropdown menu açılabilir
+                            }}
+                          >
+                            <MoreVertIcon sx={{ fontSize: 16 }} />
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <Box display="flex" justifyContent="center" mt={3}>
+                  <Pagination
+                    count={totalPages}
+                    page={currentPage}
+                    onChange={handlePageChange}
+                    color="primary"
+                    size="medium"
+                    sx={{
+                      '& .MuiPaginationItem-root': {
+                        fontSize: '14px',
+                      }
+                    }}
+                  />
+                </Box>
+              )}
+            </>
           )}
         </Paper>
       </Box>

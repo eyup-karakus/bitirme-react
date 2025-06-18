@@ -1,140 +1,84 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Box,
-  Typography,
-  Button,
-  Card,
-  CardContent,
-  Grid,
-  IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
-  Chip,
-  Avatar,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Switch,
-  FormControlLabel,
-  Tabs,
-  Tab,
+  Box, Typography, Button, Card, CardContent, Grid, IconButton, Dialog,
+  DialogTitle, DialogContent, DialogActions, TextField, Table, TableBody,
+  TableCell, TableContainer, TableHead, TableRow, Paper, Chip, Avatar,
+  FormControl, InputLabel, Select, MenuItem, Switch, FormControlLabel, Tabs, Tab,
+  Alert, Snackbar
 } from '@mui/material';
 import {
-  Add as AddIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  Email as EmailIcon,
-  Phone as PhoneIcon,
-  Business as BusinessIcon,
-  AdminPanelSettings as AdminIcon,
-  Person as UserIcon,
-  Block as BlockIcon,
-  CheckCircle as ActiveIcon,
+  Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Email as EmailIcon,
+  Phone as PhoneIcon, AdminPanelSettings as AdminIcon,
+  Person as UserIcon, Block as BlockIcon, CheckCircle as ActiveIcon
 } from '@mui/icons-material';
+import { userService } from '../../services/api';
 
 const UsersAdmin = () => {
   const [tabValue, setTabValue] = useState(0);
   const [open, setOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    department: '',
-    role: 'user',
-    active: true
+    firstName: '',
+    lastName: '',
+    fullName: '',
+    email: '', 
+    password: '',
+    roleId: 1, 
+    isActive: true
   });
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
 
-  const [users, setUsers] = useState([
-    {
-      id: 1,
-      name: 'John Doe',
-      email: 'john.doe@company.com',
-      phone: '+1 234 567 8901',
-      department: 'Engineering',
-      role: 'admin',
-      active: true,
-      lastLogin: '2024-01-28',
-      issuesAssigned: 12,
-      issuesCreated: 8
-    },
-    {
-      id: 2,
-      name: 'Jane Smith',
-      email: 'jane.smith@company.com',
-      phone: '+1 234 567 8902',
-      department: 'Product',
-      role: 'user',
-      active: true,
-      lastLogin: '2024-01-27',
-      issuesAssigned: 15,
-      issuesCreated: 23
-    },
-    {
-      id: 3,
-      name: 'Mike Johnson',
-      email: 'mike.johnson@company.com',
-      phone: '+1 234 567 8903',
-      department: 'QA',
-      role: 'user',
-      active: false,
-      lastLogin: '2024-01-20',
-      issuesAssigned: 8,
-      issuesCreated: 5
-    },
-    {
-      id: 4,
-      name: 'Sarah Wilson',
-      email: 'sarah.wilson@company.com',
-      phone: '+1 234 567 8904',
-      department: 'Design',
-      role: 'user',
-      active: true,
-      lastLogin: '2024-01-28',
-      issuesAssigned: 6,
-      issuesCreated: 11
-    }
-  ]);
+  // Fetch users from API on component mount
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        setLoading(true);
+        setError('');
+        const response = await userService.getAll();
+        // API response formatını kontrol et
+        const usersData = Array.isArray(response) ? response : (response.data || []);
+        setUsers(usersData);
+      } catch (error) {
+        console.error('Error fetching users:', error);
+        setError('Failed to fetch users. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchUsers();
+  }, []);
 
   const roles = [
-    { value: 'admin', label: 'Administrator', color: '#E53E3E', icon: <AdminIcon /> },
-    { value: 'user', label: 'User', color: '#3182CE', icon: <UserIcon /> },
-  ];
-
-  const departments = [
-    'Engineering',
-    'Product',
-    'Design',
-    'QA',
-    'Marketing',
-    'Sales',
-    'Support'
+    { value: 1, label: 'Administrator', color: '#E53E3E', icon: <AdminIcon /> },
+    { value: 2, label: 'User', color: '#3182CE', icon: <UserIcon /> },
   ];
 
   const handleOpen = (user = null) => {
     if (user) {
       setEditingUser(user);
-      setFormData(user);
+      setFormData({
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        fullName: user.fullName || `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+        email: user.email || '',
+        password: '', // Password boş bırakılır edit işleminde
+        roleId: user.roleId || 1,
+        isActive: user.isActive !== undefined ? user.isActive : true
+      });
     } else {
       setEditingUser(null);
       setFormData({
-        name: '',
-        email: '',
-        phone: '',
-        department: '',
-        role: 'user',
-        active: true
+        firstName: '',
+        lastName: '',
+        fullName: '',
+        email: '', 
+        password: '',
+        roleId: 1, 
+        isActive: true
       });
     }
     setOpen(true);
@@ -145,61 +89,139 @@ const UsersAdmin = () => {
     setEditingUser(null);
   };
 
-  const handleSave = () => {
-    if (editingUser) {
-      setUsers(prev => prev.map(user => 
-        user.id === editingUser.id 
-          ? { ...formData, id: editingUser.id, lastLogin: editingUser.lastLogin, issuesAssigned: editingUser.issuesAssigned, issuesCreated: editingUser.issuesCreated }
-          : user
-      ));
-    } else {
-      setUsers(prev => [...prev, { 
-        ...formData, 
-        id: Date.now(),
-        lastLogin: new Date().toISOString().split('T')[0],
-        issuesAssigned: 0,
-        issuesCreated: 0
-      }]);
+  const handleSave = async () => {
+    try {
+      setLoading(true);
+      setError('');
+      
+      // Form validation
+      if (!formData.firstName || !formData.lastName || !formData.email) {
+        setError('Please fill in all required fields.');
+        setLoading(false);
+        return;
+      }
+
+      if (!editingUser && !formData.password) {
+        setError('Password is required for new users.');
+        setLoading(false);
+        return;
+      }
+
+      // FullName'i otomatik oluştur
+      const updatedFormData = {
+        ...formData,
+        fullName: `${formData.firstName} ${formData.lastName}`.trim()
+      };
+
+      if (editingUser) {
+        // Update the user via the API
+        const response = await userService.update(editingUser.userId, updatedFormData);
+        const updatedUser = response.data || response;
+        setUsers(prev => prev.map(user => (user.userId === updatedUser.userId ? updatedUser : user)));
+        setSuccess('User updated successfully!');
+      } else {
+        // Create a new user via the API
+        const response = await userService.create(updatedFormData);
+        const newUser = response.data || response;
+        setUsers(prev => [...prev, newUser]);
+        setSuccess('User created successfully!');
+      }
+      handleClose();
+    } catch (error) {
+      console.error('Error saving user:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'An error occurred';
+      setError(`Failed to ${editingUser ? 'update' : 'create'} user: ${errorMessage}`);
+    } finally {
+      setLoading(false);
     }
-    handleClose();
   };
 
-  const handleDelete = (id) => {
-    setUsers(prev => prev.filter(user => user.id !== id));
+  const handleDelete = async (userId) => {
+    if (window.confirm('Are you sure you want to delete this user?')) {
+      try {
+        setLoading(true);
+        setError('');
+        await userService.delete(userId);
+        setUsers(prev => prev.filter(user => user.userId !== userId));
+        setSuccess('User deleted successfully!');
+      } catch (error) {
+        console.error('Error deleting user:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'An error occurred';
+        setError(`Failed to delete user: ${errorMessage}`);
+      } finally {
+        setLoading(false);
+      }
+    }
   };
 
-  const toggleUserStatus = (id) => {
-    setUsers(prev => prev.map(user => 
-      user.id === id ? { ...user, active: !user.active } : user
-    ));
+  const toggleUserStatus = async (userId) => {
+    try {
+      setLoading(true);
+      setError('');
+      const user = users.find(u => u.userId === userId);
+      const updatedData = { 
+        firstName: user.firstName,
+        lastName: user.lastName,
+        fullName: user.fullName,
+        email: user.email,
+        roleId: user.roleId,
+        isActive: !user.isActive 
+      };
+      
+      const response = await userService.update(userId, updatedData);
+      const updatedUser = response.data || response;
+      setUsers(prev => prev.map(user => (user.userId === userId ? updatedUser : user)));
+      setSuccess(`User ${updatedUser.isActive ? 'activated' : 'deactivated'} successfully!`);
+    } catch (error) {
+      console.error('Error toggling user status:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'An error occurred';
+      setError(`Failed to update user status: ${errorMessage}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const getRoleInfo = (role) => {
-    return roles.find(r => r.value === role) || roles[1];
+  const getRoleInfo = (roleId) => {
+    return roles.find(r => r.value === roleId) || roles[1];
   };
 
-  const getInitials = (name) => {
-    return name.split(' ').map(n => n[0]).join('').toUpperCase();
+  const getInitials = (fullName) => {
+    if (!fullName) return 'U';
+    return fullName.split(' ').map(n => n[0]).join('').toUpperCase();
   };
 
-  const activeUsers = users.filter(u => u.active).length;
-  const adminUsers = users.filter(u => u.role === 'admin').length;
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Not set';
+    try {
+      return new Date(dateString).toLocaleDateString('tr-TR');
+    } catch {
+      return 'Invalid date';
+    }
+  };
+
+  const handleCloseSnackbar = () => {
+    setError('');
+    setSuccess('');
+  };
+
+  const activeUsers = users.filter(u => u.isActive).length;
+  const adminUsers = users.filter(u => u.roleId === 1).length;
 
   return (
     <Box>
+      {/* Header and Add User Button */}
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Box>
-          <Typography variant="h4" gutterBottom fontWeight="bold">
-            Users
-          </Typography>
+          <Typography variant="h4" gutterBottom fontWeight="bold">Users</Typography>
           <Typography variant="subtitle1" color="text.secondary">
             Manage user accounts and permissions
           </Typography>
         </Box>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
+        <Button 
+          variant="contained" 
+          startIcon={<AddIcon />} 
           onClick={() => handleOpen()}
+          disabled={loading}
         >
           Add User
         </Button>
@@ -272,14 +294,14 @@ const UsersAdmin = () => {
             <CardContent>
               <Box display="flex" alignItems="center" gap={2}>
                 <Avatar sx={{ backgroundColor: '#FF8B00' }}>
-                  <BusinessIcon />
+                  <UserIcon />
                 </Avatar>
                 <Box>
                   <Typography variant="h4" fontWeight="bold">
-                    {new Set(users.map(u => u.department)).size}
+                    {users.filter(u => u.roleId === 2).length}
                   </Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Departments
+                    Regular Users
                   </Typography>
                 </Box>
               </Box>
@@ -288,42 +310,47 @@ const UsersAdmin = () => {
         </Grid>
       </Grid>
 
-      <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} sx={{ mb: 3 }}>
-        <Tab label="All Users" />
-        <Tab label="Departments" />
-        <Tab label="User Activity" />
-      </Tabs>
-
-      {tabValue === 0 && (
-        <Paper>
-          <TableContainer>
-            <Table>
-              <TableHead>
+      {/* User List Table */}
+      <Paper>
+        <TableContainer>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>User</TableCell>
+                <TableCell>Contact</TableCell>
+                <TableCell>Role</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell>Created</TableCell>
+                <TableCell>Actions</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {loading ? (
                 <TableRow>
-                  <TableCell>User</TableCell>
-                  <TableCell>Contact</TableCell>
-                  <TableCell>Department</TableCell>
-                  <TableCell>Role</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Last Login</TableCell>
-                  <TableCell>Issues</TableCell>
-                  <TableCell>Actions</TableCell>
+                  <TableCell colSpan={6} sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography>Loading...</Typography>
+                  </TableCell>
                 </TableRow>
-              </TableHead>
-              <TableBody>
-                {users.map((user) => {
-                  const roleInfo = getRoleInfo(user.role);
+              ) : users.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography>No users found</Typography>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                users.map((user) => {
+                  const roleInfo = getRoleInfo(user.roleId);
                   return (
-                    <TableRow key={user.id}>
+                    <TableRow key={user.userId}>
                       <TableCell>
                         <Box display="flex" alignItems="center" gap={2}>
                           <Avatar sx={{ backgroundColor: roleInfo.color }}>
-                            {getInitials(user.name)}
+                            {getInitials(user.fullName)}
                           </Avatar>
                           <Box>
-                            <Typography fontWeight="bold">{user.name}</Typography>
+                            <Typography fontWeight="bold">{user.fullName || 'Unnamed User'}</Typography>
                             <Typography variant="caption" color="text.secondary">
-                              ID: {user.id}
+                              ID: {user.userId}
                             </Typography>
                           </Box>
                         </Box>
@@ -332,267 +359,129 @@ const UsersAdmin = () => {
                         <Box>
                           <Box display="flex" alignItems="center" gap={1} mb={0.5}>
                             <EmailIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                            <Typography variant="body2">{user.email}</Typography>
-                          </Box>
-                          <Box display="flex" alignItems="center" gap={1}>
-                            <PhoneIcon sx={{ fontSize: 16, color: 'text.secondary' }} />
-                            <Typography variant="body2">{user.phone}</Typography>
+                            <Typography variant="body2">{user.email || 'No email'}</Typography>
                           </Box>
                         </Box>
                       </TableCell>
                       <TableCell>
-                        <Chip
-                          label={user.department}
-                          size="small"
-                          variant="outlined"
-                          icon={<BusinessIcon />}
+                        <Chip 
+                          label={roleInfo.label} 
+                          size="small" 
+                          sx={{ 
+                            backgroundColor: `${roleInfo.color}20`, 
+                            color: roleInfo.color 
+                          }} 
+                          icon={roleInfo.icon} 
                         />
                       </TableCell>
                       <TableCell>
-                        <Chip
-                          label={roleInfo.label}
-                          size="small"
-                          sx={{
-                            backgroundColor: `${roleInfo.color}20`,
-                            color: roleInfo.color,
-                          }}
-                          icon={roleInfo.icon}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={user.active ? 'Active' : 'Inactive'}
-                          size="small"
-                          color={user.active ? 'success' : 'error'}
-                          icon={user.active ? <ActiveIcon /> : <BlockIcon />}
+                        <Chip 
+                          label={user.isActive ? 'Active' : 'Inactive'} 
+                          size="small" 
+                          color={user.isActive ? 'success' : 'error'} 
+                          icon={user.isActive ? <ActiveIcon /> : <BlockIcon />} 
                         />
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2">
-                          {user.lastLogin}
+                          {formatDate(user.createdAt)}
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Box>
-                          <Typography variant="body2">
-                            Assigned: {user.issuesAssigned}
-                          </Typography>
-                          <Typography variant="body2">
-                            Created: {user.issuesCreated}
-                          </Typography>
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        <IconButton
-                          size="small"
-                          onClick={() => toggleUserStatus(user.id)}
-                          color={user.active ? 'error' : 'success'}
+                        <IconButton 
+                          size="small" 
+                          onClick={() => toggleUserStatus(user.userId)} 
+                          color={user.isActive ? 'error' : 'success'}
+                          disabled={loading}
+                          title={user.isActive ? 'Deactivate User' : 'Activate User'}
                         >
-                          {user.active ? <BlockIcon /> : <ActiveIcon />}
+                          {user.isActive ? <BlockIcon /> : <ActiveIcon />}
                         </IconButton>
-                        <IconButton
-                          size="small"
+                        <IconButton 
+                          size="small" 
                           onClick={() => handleOpen(user)}
+                          disabled={loading}
+                          title="Edit User"
                         >
                           <EditIcon />
                         </IconButton>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleDelete(user.id)}
+                        <IconButton 
+                          size="small" 
+                          onClick={() => handleDelete(user.userId)} 
                           color="error"
+                          disabled={loading}
+                          title="Delete User"
                         >
                           <DeleteIcon />
                         </IconButton>
                       </TableCell>
                     </TableRow>
                   );
-                })}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Paper>
-      )}
-
-      {tabValue === 1 && (
-        <Grid container spacing={3}>
-          {departments.map((dept) => {
-            const deptUsers = users.filter(u => u.department === dept);
-            const activeDeptUsers = deptUsers.filter(u => u.active).length;
-            
-            return (
-              <Grid item xs={12} sm={6} md={4} key={dept}>
-                <Card>
-                  <CardContent>
-                    <Box display="flex" alignItems="center" gap={2} mb={2}>
-                      <Avatar sx={{ backgroundColor: '#3182CE' }}>
-                        <BusinessIcon />
-                      </Avatar>
-                      <Box>
-                        <Typography variant="h6" fontWeight="bold">
-                          {dept}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          {deptUsers.length} users ({activeDeptUsers} active)
-                        </Typography>
-                      </Box>
-                    </Box>
-                    
-                    <Box>
-                      {deptUsers.slice(0, 3).map((user) => (
-                        <Box key={user.id} display="flex" alignItems="center" gap={1} mb={1}>
-                          <Avatar sx={{ width: 24, height: 24, fontSize: 12 }}>
-                            {getInitials(user.name)}
-                          </Avatar>
-                          <Typography variant="body2">{user.name}</Typography>
-                          {!user.active && (
-                            <Chip label="Inactive" size="small" color="error" />
-                          )}
-                        </Box>
-                      ))}
-                      {deptUsers.length > 3 && (
-                        <Typography variant="caption" color="text.secondary">
-                          +{deptUsers.length - 3} more users
-                        </Typography>
-                      )}
-                    </Box>
-                  </CardContent>
-                </Card>
-              </Grid>
-            );
-          })}
-        </Grid>
-      )}
-
-      {tabValue === 2 && (
-        <Paper>
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>User</TableCell>
-                  <TableCell>Issues Assigned</TableCell>
-                  <TableCell>Issues Created</TableCell>
-                  <TableCell>Total Activity</TableCell>
-                  <TableCell>Last Login</TableCell>
-                  <TableCell>Activity Level</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {users
-                  .sort((a, b) => (b.issuesAssigned + b.issuesCreated) - (a.issuesAssigned + a.issuesCreated))
-                  .map((user) => {
-                    const totalActivity = user.issuesAssigned + user.issuesCreated;
-                    const activityLevel = totalActivity > 20 ? 'High' : totalActivity > 10 ? 'Medium' : 'Low';
-                    const activityColor = totalActivity > 20 ? 'success' : totalActivity > 10 ? 'warning' : 'error';
-                    
-                    return (
-                      <TableRow key={user.id}>
-                        <TableCell>
-                          <Box display="flex" alignItems="center" gap={2}>
-                            <Avatar sx={{ width: 32, height: 32 }}>
-                              {getInitials(user.name)}
-                            </Avatar>
-                            <Typography fontWeight="bold">{user.name}</Typography>
-                          </Box>
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="h6" color="primary">
-                            {user.issuesAssigned}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="h6" color="secondary">
-                            {user.issuesCreated}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="h6" fontWeight="bold">
-                            {totalActivity}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2">
-                            {user.lastLogin}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            label={activityLevel}
-                            size="small"
-                            color={activityColor}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Paper>
-      )}
+                })
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
 
       {/* Add/Edit User Dialog */}
       <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {editingUser ? 'Edit User' : 'Add User'}
-        </DialogTitle>
+        <DialogTitle>{editingUser ? 'Edit User' : 'Add User'}</DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 2 }}>
-            <TextField
-              fullWidth
-              label="Full Name"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              margin="normal"
-              required
+            <TextField 
+              fullWidth 
+              label="First Name" 
+              value={formData.firstName} 
+              onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} 
+              margin="normal" 
+              required 
+              disabled={loading}
             />
-            
-            <TextField
-              fullWidth
-              label="Email"
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              margin="normal"
-              required
+            <TextField 
+              fullWidth 
+              label="Last Name" 
+              value={formData.lastName} 
+              onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} 
+              margin="normal" 
+              required 
+              disabled={loading}
             />
-
-            <TextField
-              fullWidth
-              label="Phone"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              margin="normal"
+            <TextField 
+              fullWidth 
+              label="Email" 
+              type="email" 
+              value={formData.email} 
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })} 
+              margin="normal" 
+              required 
+              disabled={loading}
             />
-
-            <FormControl fullWidth margin="normal">
-              <InputLabel>Department</InputLabel>
-              <Select
-                value={formData.department}
-                onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                label="Department"
-              >
-                {departments.map((dept) => (
-                  <MenuItem key={dept} value={dept}>
-                    {dept}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            {!editingUser && (
+              <TextField 
+                fullWidth 
+                label="Password" 
+                type="password" 
+                value={formData.password} 
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })} 
+                margin="normal" 
+                required 
+                disabled={loading}
+              />
+            )}
 
             <FormControl fullWidth margin="normal">
               <InputLabel>Role</InputLabel>
-              <Select
-                value={formData.role}
-                onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+              <Select 
+                value={formData.roleId} 
+                onChange={(e) => setFormData({ ...formData, roleId: e.target.value })} 
                 label="Role"
+                disabled={loading}
               >
                 {roles.map((role) => (
                   <MenuItem key={role.value} value={role.value}>
                     <Box display="flex" alignItems="center" gap={1}>
-                      <Box sx={{ color: role.color }}>
-                        {role.icon}
-                      </Box>
+                      <Box sx={{ color: role.color }}>{role.icon}</Box>
                       {role.label}
                     </Box>
                   </MenuItem>
@@ -600,28 +489,57 @@ const UsersAdmin = () => {
               </Select>
             </FormControl>
 
-            <FormControlLabel
+            <FormControlLabel 
               control={
-                <Switch
-                  checked={formData.active}
-                  onChange={(e) => setFormData({ ...formData, active: e.target.checked })}
+                <Switch 
+                  checked={formData.isActive} 
+                  onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
+                  disabled={loading}
                 />
-              }
-              label="Active User"
-              sx={{ mt: 2 }}
+              } 
+              label="Active User" 
+              sx={{ mt: 2 }} 
             />
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleClose}>Cancel</Button>
-          <Button onClick={handleSave} variant="contained">
-            {editingUser ? 'Update' : 'Create'}
+          <Button onClick={handleClose} disabled={loading}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleSave} 
+            variant="contained"
+            disabled={loading}
+          >
+            {loading ? 'Saving...' : (editingUser ? 'Update' : 'Create')}
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Success/Error Notifications */}
+      <Snackbar
+        open={!!success}
+        autoHideDuration={4000}
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Alert onClose={handleCloseSnackbar} severity="success" sx={{ width: '100%' }}>
+          {success}
+        </Alert>
+      </Snackbar>
+
+      <Snackbar
+        open={!!error}
+        autoHideDuration={6000}
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Alert onClose={handleCloseSnackbar} severity="error" sx={{ width: '100%' }}>
+          {error}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };
 
 export default UsersAdmin;
-  

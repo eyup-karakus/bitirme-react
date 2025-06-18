@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -36,6 +36,8 @@ import {
   Alert,
   FormGroup,
   Checkbox,
+  CircularProgress,
+  Snackbar,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -55,6 +57,7 @@ import {
   Visibility as ViewIcon,
   VisibilityOff as HideIcon,
 } from '@mui/icons-material';
+import { customFieldService, projectService, issueService } from '../../services';
 
 const CustomFieldsAdmin = () => {
   const [tabValue, setTabValue] = useState(0);
@@ -64,13 +67,22 @@ const CustomFieldsAdmin = () => {
     name: '',
     description: '',
     type: 'text',
+    projectId: '', // Boş string olarak başlatın, projects array'i yerine
     required: false,
     searchable: true,
     options: [],
     defaultValue: '',
-    issueTypes: [],
-    projects: []
+    issueTypes: []
+    // projects array'ini kaldırın
   });
+
+  // API data states
+  const [customFields, setCustomFields] = useState([]);
+  const [projects, setProjects] = useState([]);
+  const [issueTypes, setIssueTypes] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [notification, setNotification] = useState({ open: false, message: '', type: 'success' });
 
   // Field Types
   const fieldTypes = [
@@ -90,102 +102,228 @@ const CustomFieldsAdmin = () => {
     { value: 'file', label: 'File Upload', icon: <FileIcon />, description: 'File attachment' },
   ];
 
-  // Mock data
-  const [customFields, setCustomFields] = useState([
-    {
-      id: 1,
-      name: 'Story Points',
-      description: 'Estimation points for stories',
-      type: 'number',
-      required: false,
-      searchable: true,
-      defaultValue: '',
-      issueTypes: [2, 3], // Task, Story
-      projects: [1, 2],
-      options: [],
-      created: '2024-01-15',
-      usage: 45
-    },
-    {
-      id: 2,
-      name: 'Priority Level',
-      description: 'Business priority classification',
-      type: 'select',
-      required: true,
-      searchable: true,
-      defaultValue: 'Medium',
-      issueTypes: [1, 2, 3], // Bug, Task, Story
-      projects: [1],
-      options: ['Low', 'Medium', 'High', 'Critical'],
-      created: '2024-01-10',
-      usage: 78
-    },
-    {
-      id: 3,
-      name: 'Customer Email',
-      description: 'Customer contact email',
-      type: 'email',
-      required: false,
-      searchable: true,
-      defaultValue: '',
-      issueTypes: [1], // Bug
-      projects: [1, 2],
-      options: [],
-      created: '2024-01-20',
-      usage: 23
-    },
-    {
-      id: 4,
-      name: 'Testing Environment',
-      description: 'Environment where testing should be done',
-      type: 'multiselect',
-      required: false,
-      searchable: true,
-      defaultValue: '',
-      issueTypes: [1, 2], // Bug, Task
-      projects: [1],
-      options: ['Development', 'Staging', 'UAT', 'Production'],
-      created: '2024-01-25',
-      usage: 34
-    },
-    {
-      id: 5,
-      name: 'Due Date',
-      description: 'Expected completion date',
-      type: 'date',
-      required: false,
-      searchable: true,
-      defaultValue: '',
-      issueTypes: [2, 3, 4], // Task, Story, Epic
-      projects: [1, 2],
-      options: [],
-      created: '2024-01-12',
-      usage: 56
-    }
-  ]);
-
-  const issueTypes = [
-    { id: 1, name: 'Bug', color: '#E53E3E' },
-    { id: 2, name: 'Task', color: '#3182CE' },
-    { id: 3, name: 'Story', color: '#38A169' },
-    { id: 4, name: 'Epic', color: '#805AD5' },
-  ];
-
-  const projects = [
-    { id: 1, name: 'E-Commerce Platform' },
-    { id: 2, name: 'Mobile App' },
-    { id: 3, name: 'Admin Dashboard' },
-  ];
-
   const getFieldTypeInfo = (type) => {
     return fieldTypes.find(ft => ft.value === type) || fieldTypes[0];
   };
+  
+  // Fetch all required data from API
+  useEffect(() => {
+  const fetchAllData = async () => {
+  setLoading(true);
+  setError(null);
+  
+  try {
+    // Fetch custom fields
+    await fetchCustomFields();
+    
+    // Fetch projects
+    const projectsData = await projectService.getAll();
+    console.log('Projects data:', projectsData); // Dönüştürülmüş verileri kontrol edin
+    
+    // projectsData zaten dönüştürülmüş olduğu için doğrudan kullanabilirsiniz
+    setProjects(projectsData);
+    
+    // Diğer fetch işlemleri...
+  } catch (err) {
+    console.error('Error fetching data:', err);
+    setError('Failed to load data. Please try again later.');
+    showNotification('Failed to load data. Please try again later.', 'error');
+  } finally {
+    setLoading(false);
+  }
+};
+  
+  fetchAllData();
+}, []);
+  
+  // Helper function to assign colors to issue types
+  const getIssueTypeColor = (typeName) => {
+    const colors = {
+      'Bug': '#E53E3E',
+      'Task': '#3182CE',
+      'Story': '#38A169',
+      'Epic': '#805AD5'
+    };
+    
+    return colors[typeName] || '#718096'; // Default color
+  };
+
+  const fetchCustomFields = async () => {
+  try {
+    const response = await customFieldService.getAll();
+    setCustomFields(response.data || []);
+  } catch (error) {
+    console.error('Error fetching custom fields:', error);
+    showNotification('Error fetching custom fields', 'error');
+  }
+};
+
+  const createCustomField = async () => {
+    try {
+      setLoading(true);
+      
+      // API'ye gönderilecek veriyi hazırlayın
+      const dataToSend = {
+        ...formData,
+        // Eğer API projects array'i bekliyorsa:
+        projects: formData.projectId ? [formData.projectId] : []
+      };
+      
+      const result = await customFieldService.create(dataToSend);
+      
+      if (result.success) {
+        await fetchCustomFields(); // Listeyi yenile
+        handleClose();
+        showNotification('Custom field created successfully', 'success');
+      } else {
+        showNotification(result.error || 'Error creating custom field', 'error');
+      }
+    } catch (error) {
+      console.error('Error creating custom field:', error);
+      showNotification('Error creating custom field: ' + (error.message || 'Unknown error'), 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateCustomField = async () => {
+  try {
+    setLoading(true);
+    
+    const idToUse = editingField.fieldId || editingField.id;
+    
+    if (!idToUse) {
+      console.error('Cannot update: ID is missing');
+      showNotification('Cannot update field: ID is missing', 'error');
+      return;
+    }
+    
+    console.log(`Attempting to update custom field with ID: ${idToUse}`);
+    
+    // API'ye gönderilecek veriyi hazırlayın
+    const dataToSend = {
+      ...formData,
+      fieldId: idToUse, // fieldId'yi açıkça belirt
+      // Eğer API projects array'i bekliyorsa:
+      projects: formData.projectId ? [formData.projectId] : []
+    };
+    
+    console.log('Data being sent for update:', dataToSend);
+    
+    const result = await customFieldService.update(idToUse, dataToSend);
+    
+    if (result.success) {
+      await fetchCustomFields(); // Listeyi yenile
+      handleClose();
+      showNotification('Custom field updated successfully', 'success');
+    } else {
+      showNotification(result.error || 'Error updating custom field', 'error');
+    }
+  } catch (error) {
+    console.error('Error updating custom field:', error);
+    showNotification('Error updating custom field: ' + (error.message || 'Unknown error'), 'error');
+  } finally {
+    setLoading(false);
+  }
+};
+
+  // Alan silme
+  const deleteCustomField = async (id) => {
+    if (!id) {
+      console.error('Cannot delete field: ID is undefined');
+      showNotification('Cannot delete field: Invalid ID', 'error');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      console.log(`Attempting to delete custom field with ID: ${id}`);
+      
+      const result = await customFieldService.delete(id);
+      
+      if (result.success) {
+        // Silinen alanı state'den kaldır
+        setCustomFields(prevFields => prevFields.filter(field => field.id !== id));
+        showNotification('Custom field deleted successfully', 'success');
+      } else {
+        showNotification(result.error || 'Error deleting custom field', 'error');
+      }
+    } catch (error) {
+      console.error('Error deleting custom field:', error);
+      showNotification('Error deleting custom field: ' + (error.message || 'Unknown error'), 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Notification helper
+  const showNotification = (message, type = 'success') => {
+    setNotification({
+      open: true,
+      message,
+      type
+    });
+  };
+
+  const handleCloseNotification = () => {
+    setNotification({...notification, open: false});
+  };
+
+  // handleSave fonksiyonunu güncelle
+  const handleSave = () => {
+  // Form verilerini kontrol et
+  if (!formData.name) {
+    showNotification('Field name is required', 'error');
+    return;
+  }
+  
+  if (!formData.projectId) {
+    showNotification('Project selection is required', 'error');
+    return;
+  }
+  
+  console.log('Saving field data:', formData);
+  console.log('Editing field:', editingField);
+  
+  if (editingField) {
+    // Güncelleme işlemi
+    const idToUse = editingField.fieldId || editingField.id;
+    console.log(`Updating field with ID: ${idToUse}`);
+    
+    if (!idToUse) {
+      showNotification('Cannot update field: ID is missing', 'error');
+      return;
+    }
+    
+    updateCustomField(idToUse);
+  } else {
+    // Yeni oluşturma işlemi
+    createCustomField();
+  }
+};
+
+const handleDelete = (id) => {
+  console.log("Deleting field with ID:", id);
+  
+  if (!id) {
+    console.error("Cannot delete field: ID is undefined");
+    showNotification('Cannot delete field: Invalid ID', 'error');
+    return;
+  }
+  
+  if (window.confirm('Are you sure you want to delete this custom field?')) {
+    deleteCustomField(id);
+  }
+};
+
+
 
   const handleOpen = (field = null) => {
     if (field) {
       setEditingField(field);
       setFormData({
         ...field,
+        projectId: field.projectId || (field.projects && field.projects.length > 0 ? field.projects[0] : ''),
         options: field.options || []
       });
     } else {
@@ -194,12 +332,12 @@ const CustomFieldsAdmin = () => {
         name: '',
         description: '',
         type: 'text',
+        projectId: '',
         required: false,
         searchable: true,
         options: [],
         defaultValue: '',
-        issueTypes: [],
-        projects: []
+        issueTypes: []
       });
     }
     setOpen(true);
@@ -208,28 +346,6 @@ const CustomFieldsAdmin = () => {
   const handleClose = () => {
     setOpen(false);
     setEditingField(null);
-  };
-
-  const handleSave = () => {
-    if (editingField) {
-      setCustomFields(prev => prev.map(field => 
-        field.id === editingField.id 
-          ? { ...formData, id: editingField.id, created: editingField.created, usage: editingField.usage }
-          : field
-      ));
-    } else {
-      setCustomFields(prev => [...prev, { 
-        ...formData, 
-        id: Date.now(),
-        created: new Date().toISOString().split('T')[0],
-        usage: 0
-      }]);
-    }
-    handleClose();
-  };
-
-  const handleDelete = (id) => {
-    setCustomFields(prev => prev.filter(field => field.id !== id));
   };
 
   const addOption = () => {
@@ -244,6 +360,16 @@ const CustomFieldsAdmin = () => {
     newOptions[index] = value;
     setFormData({ ...formData, options: newOptions });
   };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    console.log(`Field changed: ${name}, value: ${value}`); // Değişiklikleri izleyin
+    setFormData(prev => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
+
 
   const removeOption = (index) => {
     setFormData({
@@ -280,17 +406,27 @@ const CustomFieldsAdmin = () => {
 
         {/* Preview based on field type */}
         {field.type === 'text' && (
-          <TextField size="small" placeholder="Enter text..." disabled />
+          <TextField size="small" placeholder="Enter text..." disabled fullWidth />
         )}
         {field.type === 'textarea' && (
-          <TextField size="small" multiline rows={2} placeholder="Enter text..." disabled />
+          <TextField size="small" multiline rows={2} placeholder="Enter text..." disabled fullWidth />
         )}
         {field.type === 'number' && (
-          <TextField size="small" type="number" placeholder="0" disabled />
+          <TextField size="small" type="number" placeholder="0" disabled fullWidth />
         )}
-        {field.type === 'select' && field.options.length > 0 && (
-          <FormControl size="small" sx={{ minWidth: 120 }}>
-            <Select disabled value="">
+        {field.type === 'select' && (
+          <FormControl size="small" fullWidth>
+            <Select disabled value="" displayEmpty>
+              <MenuItem value="" disabled>Select an option</MenuItem>
+              {field.options.map((option, index) => (
+                <MenuItem key={index} value={option}>{option}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        )}
+        {field.type === 'multiselect' && (
+          <FormControl size="small" fullWidth>
+            <Select disabled multiple value={[]} displayEmpty renderValue={() => 'Select options'}>
               {field.options.map((option, index) => (
                 <MenuItem key={index} value={option}>{option}</MenuItem>
               ))}
@@ -300,12 +436,60 @@ const CustomFieldsAdmin = () => {
         {field.type === 'checkbox' && (
           <FormControlLabel control={<Checkbox disabled />} label="Checkbox option" />
         )}
+        {field.type === 'radio' && field.options.length > 0 && (
+          <FormGroup>
+            {field.options.map((option, index) => (
+              <FormControlLabel key={index} control={<Checkbox disabled />} label={option} />
+            ))}
+          </FormGroup>
+        )}
         {field.type === 'date' && (
-          <TextField size="small" type="date" disabled />
+          <TextField size="small" type="date" disabled fullWidth />
+        )}
+        {field.type === 'datetime' && (
+          <TextField size="small" type="datetime-local" disabled fullWidth />
+        )}
+        {field.type === 'email' && (
+          <TextField size="small" type="email" placeholder="email@example.com" disabled fullWidth />
+        )}
+        {field.type === 'url' && (
+          <TextField size="small" type="url" placeholder="https://example.com" disabled fullWidth />
+        )}
+        {field.type === 'phone' && (
+          <TextField size="small" placeholder="+1234567890" disabled fullWidth />
+        )}
+        {field.type === 'file' && (
+          <Button variant="outlined" size="small" disabled fullWidth>Upload File</Button>
+        )}
+        {field.type === 'user' && (
+          <FormControl size="small" fullWidth>
+            <Select disabled value="" displayEmpty>
+              <MenuItem value="" disabled>Select a user</MenuItem>
+            </Select>
+          </FormControl>
         )}
       </Box>
     );
   };
+
+  if (loading && customFields.length === 0) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" height="50vh">
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (error && customFields.length === 0) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">{error}</Alert>
+        <Button sx={{ mt: 2 }} variant="contained" onClick={fetchCustomFields}>
+          Try Again
+        </Button>
+      </Box>
+    );
+  }
 
   return (
     <Box>
@@ -335,96 +519,99 @@ const CustomFieldsAdmin = () => {
 
       {tabValue === 0 && (
         <Paper>
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Field Name</TableCell>
-                  <TableCell>Type</TableCell>
-                  <TableCell>Required</TableCell>
-                  <TableCell>Issue Types</TableCell>
-                  <TableCell>Projects</TableCell>
-                  <TableCell>Usage</TableCell>
-                  <TableCell>Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {customFields.map((field) => {
-                  const typeInfo = getFieldTypeInfo(field.type);
-                  return (
-                    <TableRow key={field.id}>
-                      <TableCell>
-                        <Box>
-                          <Box display="flex" alignItems="center" gap={1}>
-                            <Box sx={{ color: 'primary.main' }}>
-                              {typeInfo.icon}
+          {loading && customFields.length > 0 && (
+            <Box sx={{ p: 2, display: 'flex', justifyContent: 'center' }}>
+              <CircularProgress size={24} />
+            </Box>
+          )}
+          
+          {customFields.length === 0 ? (
+            <Box sx={{ p: 4, textAlign: 'center' }}>
+              <Typography variant="body1" color="text.secondary">
+                No custom fields found. Click "Add Custom Field" to create one.
+              </Typography>
+            </Box>
+          ) : (
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Field Name</TableCell>
+                    <TableCell>Type</TableCell>
+                    <TableCell>Required</TableCell>
+                    <TableCell>Project</TableCell>
+                    <TableCell>Usage</TableCell>
+                    <TableCell>Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {customFields.map((field) => {
+                    const typeInfo = getFieldTypeInfo(field.type);
+                    const projectName = projects.find(p => p.projectId === field.projects[0])?.name || 'Unknown Project';
+                    
+                    return (
+                      <TableRow key={field.id}>
+                        <TableCell>
+                          <Box>
+                            <Box display="flex" alignItems="center" gap={1}>
+                              <Box sx={{ color: 'primary.main' }}>
+                                {typeInfo.icon}
+                              </Box>
+                              <Typography fontWeight="bold">{field.name}</Typography>
                             </Box>
-                            <Typography fontWeight="bold">{field.name}</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {field.description}
+                            </Typography>
                           </Box>
-                          <Typography variant="caption" color="text.secondary">
-                            {field.description}
+                        </TableCell>
+                        <TableCell>
+                          <Chip label={typeInfo.label} size="small" variant="outlined" />
+                        </TableCell>
+                        <TableCell>
+                          {field.required ? (
+                            <Chip label="Required" size="small" color="error" />
+                          ) : (
+                            <Chip label="Optional" size="small" color="default" />
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">
+                            {projectName}
                           </Typography>
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        <Chip label={typeInfo.label} size="small" variant="outlined" />
-                      </TableCell>
-                      <TableCell>
-                        {field.required ? (
-                          <Chip label="Required" size="small" color="error" />
-                        ) : (
-                          <Chip label="Optional" size="small" color="default" />
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Box display="flex" gap={0.5} flexWrap="wrap">
-                          {field.issueTypes.map(typeId => {
-                            const issueType = issueTypes.find(t => t.id === typeId);
-                            return issueType ? (
-                              <Chip
-                                key={typeId}
-                                label={issueType.name}
-                                size="small"
-                                sx={{
-                                  backgroundColor: `${issueType.color}20`,
-                                  color: issueType.color,
-                                }}
-                              />
-                            ) : null;
-                          })}
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2">
-                          {field.projects.length} project(s)
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2">
-                          {field.usage} issues
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleOpen(field)}
-                        >
-                          <EditIcon />
-                        </IconButton>
-                        <IconButton
-                          size="small"
-                          onClick={() => handleDelete(field.id)}
-                          color="error"
-                        >
-                          <DeleteIcon />
-                        </IconButton>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">
+                            {field.usage} issues
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <IconButton
+                            size="small"
+                            onClick={() => {
+                              console.log("Edit button clicked for field:", field);
+                              handleOpen(field);
+                            }}
+                          >
+                            <EditIcon />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            onClick={() => {
+                              console.log("Delete button clicked for field:", field);
+                              handleDelete(field.fieldId || field.id);  // Önce fieldId'yi kontrol et
+                            }}
+                            color="error"
+                          >
+                            <DeleteIcon />
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
         </Paper>
       )}
 
@@ -465,22 +652,28 @@ const CustomFieldsAdmin = () => {
                 <Typography variant="h6" gutterBottom fontWeight="bold">
                   Most Used Fields
                 </Typography>
-                <List>
-                  {customFields
-                    .sort((a, b) => b.usage - a.usage)
-                    .slice(0, 5)
-                    .map((field) => (
-                      <ListItem key={field.id}>
-                        <ListItemText
-                          primary={field.name}
-                          secondary={`Used in ${field.usage} issues`}
-                        />
-                        <ListItemSecondaryAction>
-                          <Chip label={field.usage} size="small" color="primary" />
-                        </ListItemSecondaryAction>
-                      </ListItem>
-                    ))}
-                </List>
+                {customFields.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">
+                    No usage data available yet.
+                  </Typography>
+                ) : (
+                  <List>
+                    {customFields
+                      .sort((a, b) => b.usage - a.usage)
+                      .slice(0, 5)
+                      .map((field) => (
+                        <ListItem key={field.id}>
+                          <ListItemText
+                            primary={field.name}
+                            secondary={`Used in ${field.usage} issues`}
+                          />
+                          <ListItemSecondaryAction>
+                            <Chip label={field.usage} size="small" color="primary" />
+                          </ListItemSecondaryAction>
+                        </ListItem>
+                      ))}
+                  </List>
+                )}
               </CardContent>
             </Card>
           </Grid>
@@ -491,22 +684,28 @@ const CustomFieldsAdmin = () => {
                 <Typography variant="h6" gutterBottom fontWeight="bold">
                   Field Type Distribution
                 </Typography>
-                {fieldTypes.map((type) => {
-                  const count = customFields.filter(f => f.type === type.value).length;
-                  if (count === 0) return null;
-                  
-                  return (
-                    <Box key={type.value} display="flex" alignItems="center" gap={2} mb={1}>
-                      <Box sx={{ color: 'primary.main' }}>
-                        {type.icon}
+                {customFields.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">
+                    No fields available yet.
+                  </Typography>
+                ) : (
+                  fieldTypes.map((type) => {
+                    const count = customFields.filter(f => f.type === type.value).length;
+                    if (count === 0) return null;
+                    
+                    return (
+                      <Box key={type.value} display="flex" alignItems="center" gap={2} mb={1}>
+                        <Box sx={{ color: 'primary.main' }}>
+                          {type.icon}
+                        </Box>
+                        <Typography variant="body2" sx={{ flexGrow: 1 }}>
+                          {type.label}
+                        </Typography>
+                        <Chip label={count} size="small" />
                       </Box>
-                      <Typography variant="body2" sx={{ flexGrow: 1 }}>
-                        {type.label}
-                      </Typography>
-                      <Chip label={count} size="small" />
-                    </Box>
-                  );
-                })}
+                    );
+                  })
+                )}
               </CardContent>
             </Card>
           </Grid>
@@ -593,6 +792,32 @@ const CustomFieldsAdmin = () => {
                   margin="normal"
                 />
               )}
+              
+              <FormControl fullWidth margin="normal">
+                <InputLabel id="project-label">Project</InputLabel>
+                <Select
+                  labelId="project-label"
+                  id="project"
+                  name="projectId" // formData'da projectId olarak saklanacak
+                  value={formData.projectId || ''}
+                  onChange={handleChange}
+                  label="Project"
+                >
+                  <MenuItem value="">
+                    <em>None</em>
+                  </MenuItem>
+                  {projects && projects.length > 0 ? (
+                    projects.map((project) => (
+                      <MenuItem key={project.id} value={project.id}>
+                        {project.name}
+                      </MenuItem>
+                    ))
+                  ) : (
+                    <MenuItem disabled>No projects available</MenuItem>
+                  )}
+                </Select>
+              </FormControl>
+
             </Grid>
 
             <Grid item xs={12} md={6}>
@@ -632,78 +857,70 @@ const CustomFieldsAdmin = () => {
               )}
             </Grid>
 
-            <Grid item xs={12}>
-              <Divider sx={{ my: 2 }} />
-              
-              <Typography variant="subtitle2" gutterBottom>
-                Apply to Issue Types
-              </Typography>
-              <FormGroup row>
-                {issueTypes.map((type) => (
-                  <FormControlLabel
-                    key={type.id}
-                    control={
-                      <Checkbox
-                        checked={formData.issueTypes.includes(type.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setFormData({
-                              ...formData,
-                              issueTypes: [...formData.issueTypes, type.id]
-                            });
-                          } else {
-                            setFormData({
-                              ...formData,
-                              issueTypes: formData.issueTypes.filter(id => id !== type.id)
-                            });
-                          }
-                        }}
-                      />
-                    }
-                    label={type.name}
-                  />
-                ))}
-              </FormGroup>
-
-              <Typography variant="subtitle2" gutterBottom sx={{ mt: 2 }}>
-                Apply to Projects
-              </Typography>
-              <FormGroup row>
-                {projects.map((project) => (
-                  <FormControlLabel
-                    key={project.id}
-                    control={
-                      <Checkbox
-                        checked={formData.projects.includes(project.id)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setFormData({
-                              ...formData,
-                              projects: [...formData.projects, project.id]
-                            });
-                          } else {
-                            setFormData({
-                              ...formData,
-                              projects: formData.projects.filter(id => id !== project.id)
-                            });
-                          }
-                        }}
-                      />
-                    }
-                    label={project.name}
-                  />
-                ))}
-              </FormGroup>
-            </Grid>
+            {issueTypes.length > 0 && (
+              <Grid item xs={12}>
+                <Divider sx={{ my: 2 }} />
+                
+                <Typography variant="subtitle2" gutterBottom>
+                  Apply to Issue Types
+                </Typography>
+                <FormGroup row>
+                  {issueTypes.map((type) => (
+                    <FormControlLabel
+                      key={type.id}
+                      control={
+                        <Checkbox
+                          checked={formData.issueTypes.includes(type.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData({
+                                ...formData,
+                                issueTypes: [...formData.issueTypes, type.id]
+                              });
+                            } else {
+                              setFormData({
+                                ...formData,
+                                issueTypes: formData.issueTypes.filter(id => id !== type.id)
+                              });
+                            }
+                          }}
+                        />
+                      }
+                      label={
+                        <Box display="flex" alignItems="center" gap={1}>
+                          <Box sx={{ width: 12, height: 12, borderRadius: '50%', backgroundColor: type.color }} />
+                          <Typography>{type.name}</Typography>
+                        </Box>
+                      }
+                    />
+                  ))}
+                </FormGroup>
+              </Grid>
+            )}
           </Grid>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleClose}>Cancel</Button>
-          <Button onClick={handleSave} variant="contained">
-            {editingField ? 'Update' : 'Create'}
+          <Button 
+            onClick={handleSave} 
+            variant="contained" 
+            disabled={!formData.name || !formData.type || !formData.projectId || loading}
+          >
+            {loading ? <CircularProgress size={24} /> : (editingField ? 'Update' : 'Create')}
           </Button>
         </DialogActions>
       </Dialog>
+      
+      {/* Notification */}
+      <Snackbar
+        open={notification.open}
+        autoHideDuration={6000}
+        onClose={handleCloseNotification}
+      >
+        <Alert onClose={handleCloseNotification} severity={notification.type} sx={{ width: '100%' }}>
+          {notification.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

@@ -32,7 +32,7 @@ import {
   Email as EmailIcon,
   Send as SendIcon,
   Settings as SettingsIcon,
-  Science as TestIcon, // Test yerine Science kullanıyoruz
+  Science as TestIcon, 
   History as HistoryIcon,
   Edit as EditIcon,
   Add as AddIcon,

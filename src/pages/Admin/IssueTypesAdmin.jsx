@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -24,17 +24,18 @@ import {
   TableHead,
   TableRow,
   Paper,
-  Switch,
-  FormControlLabel,
   Divider,
   List,
   ListItem,
   ListItemText,
-  ListItemSecondaryAction,
   Checkbox,
   FormGroup,
+  FormControlLabel,
   Tabs,
   Tab,
+  CircularProgress,
+  Alert,
+  Snackbar
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -45,13 +46,13 @@ import {
   Timeline,
   Flag,
   Settings as SettingsIcon,
-  TextFields as TextIcon,
   Numbers as NumberIcon,
   CalendarToday as DateIcon,
-  CheckBox as CheckboxIcon,
   List as ListIcon,
   Person as PersonIcon,
+  Email as EmailIcon,
 } from '@mui/icons-material';
+import { issueTypeService, customFieldService } from '../../services/api';
 
 const IssueTypesAdmin = () => {
   const [tabValue, setTabValue] = useState(0);
@@ -59,132 +60,160 @@ const IssueTypesAdmin = () => {
   const [fieldsDialogOpen, setFieldsDialogOpen] = useState(false);
   const [editingType, setEditingType] = useState(null);
   const [selectedTypeForFields, setSelectedTypeForFields] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: '',
+    severity: 'success'
+  });
   
   const [formData, setFormData] = useState({
     name: '',
     description: '',
     icon: 'Assignment',
-    color: '#3182CE'
+    color: '#4F46E5'
   });
 
-  // Mock Custom Fields Data
-  const [customFields] = useState([
-    {
-      id: 1,
-      name: 'Story Points',
-      description: 'Estimation points for stories',
-      type: 'number',
-      required: false,
-      icon: <NumberIcon />
-    },
-    {
-      id: 2,
-      name: 'Priority Level',
-      description: 'Business priority classification',
-      type: 'select',
-      required: true,
-      options: ['Low', 'Medium', 'High', 'Critical'],
-      icon: <ListIcon />
-    },
-    {
-      id: 3,
-      name: 'Customer Email',
-      description: 'Customer contact email',
-      type: 'email',
-      required: false,
-      icon: <TextIcon />
-    },
-    {
-      id: 4,
-      name: 'Testing Environment',
-      description: 'Environment where testing should be done',
-      type: 'multiselect',
-      required: false,
-      options: ['Development', 'Staging', 'UAT', 'Production'],
-      icon: <ListIcon />
-    },
-    {
-      id: 5,
-      name: 'Due Date',
-      description: 'Expected completion date',
-      type: 'date',
-      required: false,
-      icon: <DateIcon />
-    },
-    {
-      id: 6,
-      name: 'Assignee',
-      description: 'Person responsible for the issue',
-      type: 'user',
-      required: false,
-      icon: <PersonIcon />
-    },
-    {
-      id: 7,
-      name: 'Severity',
-      description: 'Impact level of the bug',
-      type: 'select',
-      required: true,
-      options: ['Minor', 'Major', 'Critical', 'Blocker'],
-      icon: <ListIcon />
-    },
-    {
-      id: 8,
-      name: 'Browser',
-      description: 'Browser where bug occurred',
-      type: 'multiselect',
-      required: false,
-      options: ['Chrome', 'Firefox', 'Safari', 'Edge'],
-      icon: <ListIcon />
-    }
-  ]);
-
-  const [issueTypes, setIssueTypes] = useState([
-    {
-      id: 1,
-      name: 'Bug',
-      description: 'A problem that impairs or prevents the functions of the product',
-      icon: 'BugReport',
-      color: '#E53E3E',
-      customFields: [2, 3, 7, 8] // Priority Level, Customer Email, Severity, Browser
-    },
-    {
-      id: 2,
-      name: 'Task',
-      description: 'A piece of work to be done or undertaken',
-      icon: 'Assignment',
-      color: '#3182CE',
-      customFields: [2, 5, 6] // Priority Level, Due Date, Assignee
-    },
-    {
-      id: 3,
-      name: 'Story',
-      description: 'A user story represents a feature from the perspective of the end user',
-      icon: 'Timeline',
-      color: '#38A169',
-      customFields: [1, 2, 5, 6] // Story Points, Priority Level, Due Date, Assignee
-    },
-    {
-      id: 4,
-      name: 'Epic',
-      description: 'A large body of work that can be broken down into smaller stories',
-      icon: 'Flag',
-      color: '#805AD5',
-      customFields: [2, 5] // Priority Level, Due Date
-    }
-  ]);
+  // API'den gelen issue type'ları saklamak için state
+  const [issueTypes, setIssueTypes] = useState([]);
+  
+  // Custom fields için state
+  const [customFields, setCustomFields] = useState([]);
 
   const iconOptions = [
-    { value: 'BugReport', label: 'Bug Report', component: <BugReport /> },
-    { value: 'Assignment', label: 'Assignment', component: <Assignment /> },
-    { value: 'Timeline', label: 'Timeline', component: <Timeline /> },
-    { value: 'Flag', label: 'Flag', component: <Flag /> }
+    { value: 'BugReport', label: 'Bug Report', component: <BugReport />, apiValue: 'bug' },
+    { value: 'Assignment', label: 'Task', component: <Assignment />, apiValue: 'task' },
+    { value: 'Timeline', label: 'Story', component: <Timeline />, apiValue: 'story' },
+    { value: 'Flag', label: 'Epic', component: <Flag />, apiValue: 'epic' }
   ];
 
   const colorOptions = [
-    '#E53E3E', '#3182CE', '#38A169', '#805AD5',
-    '#FF8B00', '#0052CC', '#36B37E', '#FF5630'
+    '#DC2626', '#4F46E5', '#059669', '#7C3AED',
+    '#EA580C', '#0891B2', '#C2410C', '#BE185D'
   ];
+
+  // API'den issue type'ları çekme
+  useEffect(() => {
+    fetchIssueTypes();
+    fetchCustomFields();
+  }, []);
+
+  const fetchIssueTypes = async () => {
+  setLoading(true);
+  setError(null);
+  try {
+    const response = await issueTypeService.getAll();
+    
+    if (!response || !response.data) {
+      throw new Error('Invalid API response');
+    }
+    
+    console.log('API response for issue types:', response.data);
+    
+    // API'den gelen verileri frontend formatına dönüştür
+    const formattedTypes = response.data.map(type => ({
+      id: type.typeId,
+      name: type.name || '',
+      description: type.description || '',
+      icon: mapApiIconToFrontend(type.icon) || 'Assignment',
+      color: type.color || '#4F46E5',
+      customFields: [] // Başlangıçta boş, sonra doldurulacak
+    }));
+    
+    setIssueTypes(formattedTypes);
+    
+    // Her issue type için custom field'ları yükle
+    await Promise.all(formattedTypes.map(async (type) => {
+      await loadCustomFieldsForType(type.id);
+    }));
+    
+  } catch (err) {
+    console.error('Failed to fetch issue types:', err);
+    setError('Failed to load issue types. Please try again later.');
+  } finally {
+    setLoading(false);
+  }
+};
+
+const loadCustomFieldsForType = async (typeId) => {
+  try {
+    const customFieldIds = await fetchTypeCustomFields(typeId);
+    
+    // State'i güncelle
+    setIssueTypes(prev => prev.map(type => 
+      type.id === typeId
+        ? { ...type, customFields: customFieldIds }
+        : type
+    ));
+    
+    return customFieldIds;
+  } catch (error) {
+    console.error(`Error loading custom fields for type ${typeId}:`, error);
+    return [];
+  }
+};
+
+  const fetchCustomFields = async () => {
+    try {
+      const response = await customFieldService.getAll();
+      
+      if (!response || !response.data) {
+        console.warn('No custom fields found or invalid response');
+        return;
+      }
+      
+      console.log('API response for custom fields:', response.data);
+      
+      // API'den gelen custom field'ları frontend formatına dönüştür
+      const formattedFields = response.data.map(field => ({
+        id: field.fieldId,
+        name: field.fieldName || '',
+        description: field.description || '',
+        type: field.fieldType || 'text',
+        required: field.required || false,
+        options: field.options ? field.options.split(',').map(opt => opt.trim()) : [],
+        icon: getFieldIcon(field.fieldType)
+      }));
+      
+      setCustomFields(formattedFields);
+    } catch (err) {
+      console.error('Failed to fetch custom fields:', err);
+    }
+  };
+
+  // Field type'a göre icon döndür
+  const getFieldIcon = (fieldType) => {
+    const iconMap = {
+      'text': <ListIcon />,
+      'number': <NumberIcon />,
+      'date': <DateIcon />,
+      'select': <ListIcon />,
+      'multiselect': <ListIcon />,
+      'email': <EmailIcon />,
+      'user': <PersonIcon />
+    };
+    return iconMap[fieldType] || <ListIcon />;
+  };
+
+  // API'den gelen icon string'ini frontend component'ine dönüştür
+  const mapApiIconToFrontend = (iconName) => {
+    if (!iconName) return 'Assignment';
+    
+    const iconMap = {
+      'bug': 'BugReport',
+      'task': 'Assignment',
+      'story': 'Timeline',
+      'epic': 'Flag'
+    };
+    return iconMap[iconName.toLowerCase()] || 'Assignment';
+  };
+
+  // Frontend icon string'ini API'ye gönderilecek formata dönüştür
+  const mapFrontendIconToApi = (iconName) => {
+    const iconOption = iconOptions.find(opt => opt.value === iconName);
+    return iconOption ? iconOption.apiValue : 'task';
+  };
 
   const getIcon = (iconName) => {
     const iconMap = {
@@ -201,7 +230,7 @@ const IssueTypesAdmin = () => {
       setEditingType(type);
       setFormData({
         name: type.name,
-        description: type.description,
+        description: type.description || '',
         icon: type.icon,
         color: type.color
       });
@@ -211,7 +240,7 @@ const IssueTypesAdmin = () => {
         name: '',
         description: '',
         icon: 'Assignment',
-        color: '#3182CE'
+        color: '#4F46E5'
       });
     }
     setOpen(true);
@@ -222,31 +251,125 @@ const IssueTypesAdmin = () => {
     setEditingType(null);
   };
 
-  const handleSave = () => {
-    if (editingType) {
-      setIssueTypes(prev => prev.map(type => 
-        type.id === editingType.id 
-          ? { ...type, ...formData }
-          : type
-      ));
-    } else {
-      setIssueTypes(prev => [...prev, { 
-        ...formData, 
-        id: Date.now(),
-        customFields: []
-      }]);
+  const handleSave = async () => {
+    try {
+      setLoading(true);
+      
+      // Form validation
+      if (!formData.name.trim()) {
+        setSnackbar({
+          open: true,
+          message: 'Issue type name is required',
+          severity: 'error'
+        });
+        setLoading(false);
+        return;
+      }
+      
+      // API'ye gönderilecek veriyi hazırla
+      const issueTypeData = {
+        name: formData.name,
+        description: formData.description || null,
+        icon: mapFrontendIconToApi(formData.icon),
+        color: formData.color
+      };
+
+      console.log('Sending data to API:', issueTypeData);
+      
+      let result;
+      
+      if (editingType) {
+        // Güncelleme işlemi
+        result = await issueTypeService.update(editingType.id, issueTypeData);
+        
+        if (result && result.data) {
+          console.log('Update response:', result.data);
+          
+          // UI'daki veriyi güncelle
+          setIssueTypes(prev => prev.map(type => 
+            type.id === editingType.id 
+              ? { 
+                  ...type, 
+                  name: formData.name,
+                  description: formData.description,
+                  icon: formData.icon,
+                  color: formData.color
+                }
+              : type
+          ));
+          
+          setSnackbar({
+            open: true,
+            message: 'Issue type updated successfully',
+            severity: 'success'
+          });
+        }
+      } else {
+        // Yeni oluşturma işlemi
+        result = await issueTypeService.create(issueTypeData);
+        
+        if (result && result.data) {
+          console.log('Create response:', result.data);
+          
+          // Yeni oluşturulan veriyi API'den alınan ID ile ekle
+          const newType = {
+            id: result.data.typeId,
+            name: formData.name,
+            description: formData.description,
+            icon: formData.icon,
+            color: formData.color,
+            customFields: []
+          };
+          
+          setIssueTypes(prev => [...prev, newType]);
+          
+          setSnackbar({
+            open: true,
+            message: 'Issue type created successfully',
+            severity: 'success'
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Error saving issue type:', error);
+      setSnackbar({
+        open: true,
+        message: `Error: ${error.message || 'Failed to save issue type'}`,
+        severity: 'error'
+      });
+    } finally {
+      setLoading(false);
+      handleClose();
     }
-    handleClose();
   };
 
-  const handleDelete = (id) => {
-    setIssueTypes(prev => prev.filter(type => type.id !== id));
+  const handleDelete = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this issue type?')) {
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      await issueTypeService.delete(id);
+      setIssueTypes(prev => prev.filter(type => type.id !== id));
+      setSnackbar({
+        open: true,
+        message: 'Issue type deleted successfully',
+        severity: 'success'
+      });
+    } catch (error) {
+      console.error('Error deleting issue type:', error);
+      setSnackbar({
+        open: true,
+        message: `Error: ${error.message || 'Failed to delete issue type'}`,
+        severity: 'error'
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const openFieldsDialog = (type) => {
-    setSelectedTypeForFields(type);
-    setFieldsDialogOpen(true);
-  };
+  
 
   const closeFieldsDialog = () => {
     setFieldsDialogOpen(false);
@@ -256,22 +379,6 @@ const IssueTypesAdmin = () => {
   const toggleCustomField = (fieldId) => {
     if (!selectedTypeForFields) return;
 
-    setIssueTypes(prev => prev.map(type => {
-      if (type.id === selectedTypeForFields.id) {
-        const currentFields = type.customFields || [];
-        const hasField = currentFields.includes(fieldId);
-        
-        return {
-          ...type,
-          customFields: hasField 
-            ? currentFields.filter(id => id !== fieldId)
-            : [...currentFields, fieldId]
-        };
-      }
-      return type;
-    }));
-
-    // Update selectedTypeForFields for real-time preview
     setSelectedTypeForFields(prev => {
       const currentFields = prev.customFields || [];
       const hasField = currentFields.includes(fieldId);
@@ -285,194 +392,575 @@ const IssueTypesAdmin = () => {
     });
   };
 
+  const fetchTypeCustomFields = async (typeId) => {
+  try {
+    const response = await issueTypeService.getCustomFields(typeId);
+    
+    if (!response || !response.data) {
+      console.warn(`No custom fields found for issue type ${typeId}`);
+      return [];
+    }
+    
+    console.log(`Custom fields for issue type ${typeId}:`, response.data);
+    
+    // API'den gelen custom field'ları ID listesine dönüştür
+    const customFieldIds = response.data.map(cf => cf.customFieldId);
+    return customFieldIds;
+  } catch (err) {
+    console.error(`Failed to fetch custom fields for issue type ${typeId}:`, err);
+    return [];
+  }
+};
+
+  const saveCustomFields = async () => {
+  try {
+    if (!selectedTypeForFields) return;
+    
+    setLoading(true);
+    
+    // API'ye gönderilecek veriyi hazırla
+    const customFieldsData = {
+      issueTypeId: selectedTypeForFields.id,
+      customFields: (selectedTypeForFields.customFields || []).map((fieldId, index) => ({
+        customFieldId: fieldId,
+        isRequired: getCustomFieldById(fieldId)?.required || false,
+        displayOrder: index
+      }))
+    };
+    
+    console.log('Sending custom fields data to API:', customFieldsData);
+    
+    // API çağrısı
+    await issueTypeService.updateCustomFields(selectedTypeForFields.id, customFieldsData);
+    
+    // UI'daki veriyi güncelle
+    setIssueTypes(prev => prev.map(type => 
+      type.id === selectedTypeForFields.id
+        ? { ...type, customFields: selectedTypeForFields.customFields }
+        : type
+    ));
+    
+    setSnackbar({
+      open: true,
+      message: 'Custom fields updated successfully',
+      severity: 'success'
+    });
+    
+    closeFieldsDialog();
+  } catch (error) {
+    console.error('Error saving custom fields:', error);
+    setSnackbar({
+      open: true,
+      message: `Error: ${error.message || 'Failed to save custom fields'}`,
+      severity: 'error'
+    });
+  } finally {
+    setLoading(false);
+  }
+};
+
+const openFieldsDialog = async (type) => {
+  setLoading(true);
+  try {
+    // API'den bu issue type için custom field'ları çek
+    const customFieldIds = await fetchTypeCustomFields(type.id);
+    
+    // State'i güncelle
+    setSelectedTypeForFields({
+      ...type,
+      customFields: customFieldIds
+    });
+  } catch (error) {
+    console.error('Error fetching custom fields:', error);
+    setSnackbar({
+      open: true,
+      message: `Error: ${error.message || 'Failed to fetch custom fields'}`,
+      severity: 'error'
+    });
+    setSelectedTypeForFields(type);
+  } finally {
+    setLoading(false);
+    setFieldsDialogOpen(true);
+  }
+};
+
   const getCustomFieldById = (id) => {
     return customFields.find(field => field.id === id);
   };
 
   const getFieldTypeColor = (type) => {
     const colors = {
-      text: '#3182CE',
-      number: '#38A169',
-      date: '#805AD5',
-      select: '#FF8B00',
-      multiselect: '#E53E3E',
-      email: '#0052CC',
-      user: '#FF5630'
+      text: '#4F46E5',
+      number: '#059669',
+      date: '#7C3AED',
+      select: '#EA580C',
+      multiselect: '#DC2626',
+      email: '#0891B2',
+      user: '#BE185D'
     };
-    return colors[type] || '#3182CE';
+    return colors[type] || '#4F46E5';
   };
 
+  const handleCloseSnackbar = () => {
+    setSnackbar({...snackbar, open: false});
+  };
+
+  if (loading && issueTypes.length === 0) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
   return (
-    <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+    <Box sx={{ fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, sans-serif' }}>
+      {/* Snackbar for notifications */}
+      <Snackbar 
+        open={snackbar.open} 
+        autoHideDuration={6000} 
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+      >
+        <Alert 
+          onClose={handleCloseSnackbar} 
+          severity={snackbar.severity} 
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
+
+      {/* Header */}
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
         <Box>
-          <Typography variant="h4" gutterBottom fontWeight="bold">
+          <Typography 
+            variant="h4" 
+            sx={{ 
+              fontWeight: 700,
+              fontSize: '1.875rem',
+              color: '#111827',
+              mb: 0.5,
+              fontFamily: 'inherit'
+            }}
+          >
             Issue Types
           </Typography>
-          <Typography variant="subtitle1" color="text.secondary">
+          <Typography 
+            variant="body1" 
+            sx={{ 
+              color: '#6B7280',
+              fontSize: '1rem',
+              fontWeight: 400,
+              fontFamily: 'inherit'
+            }}
+          >
             Configure issue types and their custom fields
           </Typography>
         </Box>
         <Button
           variant="contained"
-          startIcon={<AddIcon />}
+          startIcon={<AddIcon sx={{ fontSize: 20 }} />}
           onClick={() => handleOpen()}
+          sx={{
+            backgroundColor: '#4F46E5',
+            '&:hover': { backgroundColor: '#4338CA' },
+            textTransform: 'none',
+            fontWeight: 600,
+            fontSize: '0.875rem',
+            px: 3,
+            py: 1.5,
+            borderRadius: 2,
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+            fontFamily: 'inherit'
+          }}
         >
           Add Issue Type
         </Button>
       </Box>
 
-      <Tabs value={tabValue} onChange={(e, v) => setTabValue(v)} sx={{ mb: 3 }}>
+      {/* Error message if API fetch failed */}
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+        </Alert>
+      )}
+
+      {/* Tabs */}
+      <Tabs 
+        value={tabValue} 
+        onChange={(e, v) => setTabValue(v)} 
+        sx={{ 
+          mb: 3,
+          '& .MuiTab-root': {
+            textTransform: 'none',
+            fontWeight: 600,
+            fontSize: '0.875rem',
+            fontFamily: 'inherit'
+          }
+        }}
+      >
         <Tab label="Issue Types" />
         <Tab label="Field Configuration" />
       </Tabs>
 
+      {/* Issue Types Grid */}
       {tabValue === 0 && (
         <Grid container spacing={3}>
-          {issueTypes.map((type) => (
-            <Grid item xs={12} sm={6} md={4} key={type.id}>
-              <Card>
-                <CardContent>
-                  <Box display="flex" alignItems="center" gap={2} mb={2}>
-                    <Box sx={{ color: type.color, fontSize: 32 }}>
-                      {getIcon(type.icon)}
-                    </Box>
-                    <Box sx={{ flexGrow: 1 }}>
-                      <Typography variant="h6" fontWeight="bold">
-                        {type.name}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {type.description}
-                      </Typography>
-                    </Box>
-                  </Box>
-
-                  <Divider sx={{ my: 2 }} />
-
-                  <Box mb={2}>
-                    <Typography variant="subtitle2" gutterBottom fontWeight="bold">
-                      Custom Fields ({(type.customFields || []).length})
-                    </Typography>
-                    <Box display="flex" gap={0.5} flexWrap="wrap">
-                      {(type.customFields || []).slice(0, 3).map(fieldId => {
-                        const field = getCustomFieldById(fieldId);
-                        return field ? (
-                          <Chip
-                            key={fieldId}
-                            label={field.name}
-                            size="small"
-                            sx={{
-                              backgroundColor: `${getFieldTypeColor(field.type)}20`,
-                              color: getFieldTypeColor(field.type),
-                            }}
-                          />
-                        ) : null;
-                      })}
-                      {(type.customFields || []).length > 3 && (
-                        <Chip
-                          label={`+${(type.customFields || []).length - 3} more`}
-                          size="small"
-                          variant="outlined"
-                        />
-                      )}
-                    </Box>
-                  </Box>
-
-                  <Box display="flex" gap={1}>
-                    <Button
-                      size="small"
-                      startIcon={<SettingsIcon />}
-                      onClick={() => openFieldsDialog(type)}
-                      variant="outlined"
-                      fullWidth
-                    >
-                      Configure Fields
-                    </Button>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleOpen(type)}
-                    >
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleDelete(type.id)}
-                      color="error"
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </Box>
-                </CardContent>
-              </Card>
+          {issueTypes.length === 0 ? (
+            <Grid item xs={12}>
+              <Paper 
+                sx={{ 
+                  p: 4, 
+                  textAlign: 'center',
+                  border: '1px dashed #D1D5DB',
+                  borderRadius: 3
+                }}
+              >
+                <Typography color="text.secondary">
+                  No issue types found. Click "Add Issue Type" to create one.
+                </Typography>
+              </Paper>
             </Grid>
-          ))}
-        </Grid>
-      )}
+          ) : (
+            issueTypes.map((type) => (
+              <Grid item xs={12} sm={6} lg={4} key={type.id}>
+                <Card 
+                  sx={{ 
+                    height: 280,
+                    width: '100%',
+                    maxWidth: 360,
+                    border: '1px solid #E5E7EB',
+                    borderRadius: 3,
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                    '&:hover': {
+                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+                      transform: 'translateY(-2px)',
+                      transition: 'all 0.2s ease-in-out'
+                    }
+                  }}
+                >
+                  <CardContent sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
+                    {/* Header */}
+                    <Box display="flex" alignItems="center" gap={2} mb={2}>
+                      <Box 
+                        sx={{ 
+                          color: type.color, 
+                          fontSize: 28,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          width: 48,
+                          height: 48,
+                          borderRadius: 2,
+                          backgroundColor: `${type.color}15`
+                        }}
+                      >
+                        {getIcon(type.icon)}
+                      </Box>
+                      <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                        <Typography 
+                          variant="h6" 
+                          sx={{ 
+                            fontWeight: 700,
+                            fontSize: '1.125rem',
+                            color: '#111827',
+                            mb: 0.5,
+                            fontFamily: 'inherit'
+                          }}
+                        >
+                          {type.name}
+                        </Typography>
+                        <Typography 
+                          variant="body2" 
+                          sx={{ 
+                            color: '#6B7280',
+                            fontSize: '0.875rem',
+                            lineHeight: 1.4,
+                            fontFamily: 'inherit',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden'
+                          }}
+                        >
+                          {type.description || 'No description'}
+                        </Typography>
+                      </Box>
+                    </Box>
 
-      {tabValue === 1 && (
-        <Paper>
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Issue Type</TableCell>
-                  <TableCell>Custom Fields</TableCell>
-                  <TableCell>Required Fields</TableCell>
-                  <TableCell>Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {issueTypes.map((type) => {
-                  const typeFields = (type.customFields || []).map(id => getCustomFieldById(id)).filter(Boolean);
-                  const requiredFields = typeFields.filter(field => field.required);
-                  
-                  return (
-                    <TableRow key={type.id}>
-                      <TableCell>
-                        <Box display="flex" alignItems="center" gap={2}>
-                          <Box sx={{ color: type.color }}>
-                            {getIcon(type.icon)}
-                          </Box>
-                          <Box>
-                            <Typography fontWeight="bold">{type.name}</Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {type.description}
-                            </Typography>
-                          </Box>
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        <Box display="flex" gap={0.5} flexWrap="wrap">
-                          {typeFields.map(field => (
+                    <Divider sx={{ my: 2 }} />
+
+                    {/* Custom Fields */}
+                    <Box mb={2} sx={{ flexGrow: 1 }}>
+                      <Typography 
+                        variant="subtitle2" 
+                        sx={{ 
+                          fontWeight: 600,
+                          fontSize: '0.875rem',
+                          color: '#374151',
+                          mb: 1.5,
+                          fontFamily: 'inherit'
+                        }}
+                      >
+                        Custom Fields ({(type.customFields || []).length})
+                      </Typography>
+                      <Box display="flex" gap={0.75} flexWrap="wrap">
+                        {(type.customFields || []).slice(0, 3).map(fieldId => {
+                          const field = getCustomFieldById(fieldId);
+                          return field ? (
                             <Chip
-                              key={field.id}
+                              key={fieldId}
                               label={field.name}
                               size="small"
                               sx={{
-                                backgroundColor: `${getFieldTypeColor(field.type)}20`,
+                                backgroundColor: `${getFieldTypeColor(field.type)}15`,
                                 color: getFieldTypeColor(field.type),
+                                fontSize: '0.75rem',
+                                fontWeight: 500,
+                                height: 24,
+                                fontFamily: 'inherit',
+                                '& .MuiChip-label': {
+                                  px: 1
+                                }
                               }}
                             />
-                          ))}
-                        </Box>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2">
-                          {requiredFields.length} of {typeFields.length} required
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          size="small"
-                          startIcon={<SettingsIcon />}
-                          onClick={() => openFieldsDialog(type)}
-                        >
-                          Configure
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                          ) : null;
+                        })}
+                        {(type.customFields || []).length > 3 && (
+                          <Chip
+                            label={`+${(type.customFields || []).length - 3}`}
+                            size="small"
+                            variant="outlined"
+                            sx={{
+                              fontSize: '0.75rem',
+                              fontWeight: 500,
+                              height: 24,
+                              fontFamily: 'inherit',
+                              borderColor: '#D1D5DB',
+                              color: '#6B7280'
+                            }}
+                          />
+                        )}
+                        {(type.customFields || []).length === 0 && (
+                          <Typography 
+                            variant="body2" 
+                            sx={{ 
+                              color: '#9CA3AF',
+                              fontSize: '0.75rem',
+                              fontStyle: 'italic'
+                            }}
+                          >
+                            No custom fields configured
+                          </Typography>
+                        )}
+                      </Box>
+                    </Box>
+
+                    {/* Actions */}
+                    <Box display="flex" gap={1} mt="auto">
+                      <Button
+                        size="small"
+                        startIcon={<SettingsIcon sx={{ fontSize: 16 }} />}
+                        onClick={() => openFieldsDialog(type)}
+                        variant="outlined"
+                        sx={{
+                          flex: 1,
+                          textTransform: 'none',
+                          fontWeight: 500,
+                          fontSize: '0.8125rem',
+                          py: 1,
+                          borderColor: '#D1D5DB',
+                          color: '#374151',
+                          '&:hover': {
+                            borderColor: '#9CA3AF',
+                            backgroundColor: '#F9FAFB'
+                          },
+                          fontFamily: 'inherit'
+                        }}
+                      >
+                        Configure
+                      </Button>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleOpen(type)}
+                        sx={{
+                          color: '#6B7280',
+                          '&:hover': {
+                            backgroundColor: '#F3F4F6',
+                            color: '#374151'
+                          }
+                        }}
+                      >
+                        <EditIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleDelete(type.id)}
+                        sx={{
+                          color: '#6B7280',
+                          '&:hover': {
+                            backgroundColor: '#FEF2F2',
+                            color: '#DC2626'
+                          }
+                        }}
+                      >
+                        <DeleteIcon sx={{ fontSize: 18 }} />
+                      </IconButton>
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))
+          )}
+        </Grid>
+      )}
+
+      {/* Field Configuration Table */}
+      {tabValue === 1 && (
+        <Paper 
+          sx={{ 
+            border: '1px solid #E5E7EB',
+            borderRadius: 3,
+            overflow: 'hidden'
+          }}
+        >
+          <TableContainer>
+            <Table>
+              <TableHead sx={{ backgroundColor: '#F9FAFB' }}>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 600, fontSize: '0.875rem', color: '#374151', fontFamily: 'inherit' }}>
+                    Issue Type
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: '0.875rem', color: '#374151', fontFamily: 'inherit' }}>
+                    Custom Fields
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: '0.875rem', color: '#374151', fontFamily: 'inherit' }}>
+                    Required Fields
+                  </TableCell>
+                  <TableCell sx={{ fontWeight: 600, fontSize: '0.875rem', color: '#374151', fontFamily: 'inherit' }}>
+                    Actions
+                  </TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {issueTypes.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} align="center" sx={{ py: 3 }}>
+                      <Typography color="text.secondary">
+                        No issue types found
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  issueTypes.map((type) => {
+                    const typeFields = (type.customFields || [])
+                      .map(id => getCustomFieldById(id))
+                      .filter(Boolean);
+                    const requiredFields = typeFields.filter(field => field.required);
+                    
+                    return (
+                      <TableRow key={type.id} sx={{ '&:hover': { backgroundColor: '#F9FAFB' } }}>
+                        <TableCell>
+                          <Box display="flex" alignItems="center" gap={2}>
+                            <Box 
+                              sx={{ 
+                                color: type.color,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                width: 36,
+                                height: 36,
+                                borderRadius: 2,
+                                backgroundColor: `${type.color}15`
+                              }}
+                            >
+                              {getIcon(type.icon)}
+                            </Box>
+                            <Box>
+                              <Typography 
+                                sx={{ 
+                                  fontWeight: 600,
+                                  fontSize: '0.875rem',
+                                  color: '#111827',
+                                  fontFamily: 'inherit'
+                                }}
+                              >
+                                {type.name}
+                              </Typography>
+                              <Typography 
+                                variant="caption" 
+                                sx={{ 
+                                  color: '#6B7280',
+                                  fontSize: '0.75rem',
+                                  fontFamily: 'inherit'
+                                }}
+                              >
+                                {type.description || 'No description'}
+                              </Typography>
+                            </Box>
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Box display="flex" gap={0.5} flexWrap="wrap">
+                            {typeFields.length > 0 ? (
+                              typeFields.map(field => (
+                                <Chip
+                                  key={field.id}
+                                  label={field.name}
+                                  size="small"
+                                  sx={{
+                                    backgroundColor: `${getFieldTypeColor(field.type)}15`,
+                                    color: getFieldTypeColor(field.type),
+                                    fontSize: '0.75rem',
+                                    fontWeight: 500,
+                                    height: 24,
+                                    fontFamily: 'inherit'
+                                  }}
+                                />
+                              ))
+                            ) : (
+                              <Typography variant="body2" color="text.secondary">
+                                No custom fields
+                              </Typography>
+                            )}
+                          </Box>
+                        </TableCell>
+                        <TableCell>
+                          <Typography 
+                            variant="body2"
+                            sx={{ 
+                              fontSize: '0.875rem',
+                              color: '#374151',
+                              fontFamily: 'inherit'
+                            }}
+                          >
+                            {requiredFields.length} of {typeFields.length} required
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            size="small"
+                            startIcon={<SettingsIcon sx={{ fontSize: 16 }} />}
+                            onClick={() => openFieldsDialog(type)}
+                            sx={{
+                              textTransform: 'none',
+                              fontWeight: 500,
+                              fontSize: '0.8125rem',
+                              color: '#4F46E5',
+                              '&:hover': {
+                                backgroundColor: '#EEF2FF'
+                              },
+                              fontFamily: 'inherit'
+                            }}
+                          >
+                            Configure
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
               </TableBody>
             </Table>
           </TableContainer>
@@ -480,8 +968,24 @@ const IssueTypesAdmin = () => {
       )}
 
       {/* Add/Edit Issue Type Dialog */}
-      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-        <DialogTitle>
+      <Dialog 
+        open={open} 
+        onClose={handleClose} 
+        maxWidth="sm" 
+        fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            border: '1px solid #E5E7EB'
+          }
+        }}
+      >
+        <DialogTitle sx={{ 
+          fontWeight: 700,
+          fontSize: '1.25rem',
+          color: '#111827',
+          fontFamily: 'inherit'
+        }}>
           {editingType ? 'Edit Issue Type' : 'Add Issue Type'}
         </DialogTitle>
         <DialogContent>
@@ -492,6 +996,17 @@ const IssueTypesAdmin = () => {
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               margin="normal"
+                            sx={{
+                '& .MuiInputLabel-root': {
+                  fontSize: '0.875rem',
+                  fontFamily: 'inherit'
+                },
+                '& .MuiInputBase-input': {
+                  fontSize: '0.875rem',
+                  fontFamily: 'inherit'
+                }
+              }}
+              required
             />
             
             <TextField
@@ -502,42 +1017,75 @@ const IssueTypesAdmin = () => {
               margin="normal"
               multiline
               rows={3}
+              sx={{
+                '& .MuiInputLabel-root': {
+                  fontSize: '0.875rem',
+                  fontFamily: 'inherit'
+                },
+                '& .MuiInputBase-input': {
+                  fontSize: '0.875rem',
+                  fontFamily: 'inherit'
+                }
+              }}
             />
 
             <FormControl fullWidth margin="normal">
-              <InputLabel>Icon</InputLabel>
+              <InputLabel sx={{ fontSize: '0.875rem', fontFamily: 'inherit' }}>
+                Icon
+              </InputLabel>
               <Select
                 value={formData.icon}
                 onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
                 label="Icon"
+                sx={{
+                  '& .MuiSelect-select': {
+                    fontSize: '0.875rem',
+                    fontFamily: 'inherit'
+                  }
+                }}
               >
                 {iconOptions.map((option) => (
                   <MenuItem key={option.value} value={option.value}>
-                    <Box display="flex" alignItems="center" gap={1}>
+                    <Box display="flex" alignItems="center" gap={1.5}>
                       {option.component}
-                      {option.label}
+                      <Typography sx={{ fontSize: '0.875rem', fontFamily: 'inherit' }}>
+                        {option.label}
+                      </Typography>
                     </Box>
                   </MenuItem>
                 ))}
               </Select>
             </FormControl>
 
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle2" gutterBottom>
+            <Box sx={{ mt: 3 }}>
+              <Typography 
+                variant="subtitle2" 
+                sx={{ 
+                  mb: 2,
+                  fontWeight: 600,
+                  fontSize: '0.875rem',
+                  color: '#374151',
+                  fontFamily: 'inherit'
+                }}
+              >
                 Color
               </Typography>
-              <Box display="flex" gap={1} flexWrap="wrap">
+              <Box display="flex" gap={1.5} flexWrap="wrap">
                 {colorOptions.map((color) => (
                   <Box
                     key={color}
                     sx={{
-                      width: 32,
-                      height: 32,
+                      width: 36,
+                      height: 36,
                       backgroundColor: color,
-                      borderRadius: '50%',
+                      borderRadius: 2,
                       cursor: 'pointer',
-                      border: formData.color === color ? '3px solid #000' : '2px solid #fff',
-                      boxShadow: '0 0 0 1px #ccc',
+                      border: formData.color === color ? `3px solid ${color}` : '2px solid #E5E7EB',
+                      boxShadow: formData.color === color ? '0 0 0 2px #fff, 0 0 0 4px #E5E7EB' : 'none',
+                      transition: 'all 0.2s ease-in-out',
+                      '&:hover': {
+                        transform: 'scale(1.1)'
+                      }
                     }}
                     onClick={() => setFormData({ ...formData, color })}
                   />
@@ -545,25 +1093,80 @@ const IssueTypesAdmin = () => {
               </Box>
             </Box>
 
-            <Box sx={{ mt: 2, p: 2, backgroundColor: '#f5f5f5', borderRadius: 1 }}>
-              <Typography variant="subtitle2" gutterBottom>
+            <Box sx={{ mt: 3, p: 3, backgroundColor: '#F9FAFB', borderRadius: 2, border: '1px solid #E5E7EB' }}>
+              <Typography 
+                variant="subtitle2" 
+                sx={{ 
+                  mb: 2,
+                  fontWeight: 600,
+                  fontSize: '0.875rem',
+                  color: '#374151',
+                  fontFamily: 'inherit'
+                }}
+              >
                 Preview
               </Typography>
-              <Box display="flex" alignItems="center" gap={1}>
-                <Box sx={{ color: formData.color }}>
+              <Box display="flex" alignItems="center" gap={2}>
+                <Box 
+                  sx={{ 
+                    color: formData.color,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 40,
+                    height: 40,
+                    borderRadius: 2,
+                    backgroundColor: `${formData.color}15`
+                  }}
+                >
                   {getIcon(formData.icon)}
                 </Box>
-                <Typography fontWeight="bold">
+                <Typography 
+                  sx={{ 
+                    fontWeight: 600,
+                    fontSize: '1rem',
+                    color: '#111827',
+                    fontFamily: 'inherit'
+                  }}
+                >
                   {formData.name || 'Issue Type Name'}
                 </Typography>
               </Box>
             </Box>
           </Box>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleClose}>Cancel</Button>
-          <Button onClick={handleSave} variant="contained">
-            {editingType ? 'Update' : 'Create'}
+        <DialogActions sx={{ p: 3, pt: 2 }}>
+          <Button 
+            onClick={handleClose}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 500,
+              fontSize: '0.875rem',
+              color: '#6B7280',
+              fontFamily: 'inherit'
+            }}
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleSave} 
+            variant="contained"
+            disabled={loading}
+            sx={{
+              backgroundColor: '#4F46E5',
+              '&:hover': { backgroundColor: '#4338CA' },
+              textTransform: 'none',
+              fontWeight: 600,
+              fontSize: '0.875rem',
+              px: 3,
+              fontFamily: 'inherit'
+            }}
+          >
+            {loading ? (
+              <CircularProgress size={24} color="inherit" />
+            ) : (
+              editingType ? 'Update' : 'Create'
+            )}
           </Button>
         </DialogActions>
       </Dialog>
@@ -574,74 +1177,213 @@ const IssueTypesAdmin = () => {
         onClose={closeFieldsDialog} 
         maxWidth="md" 
         fullWidth
+        PaperProps={{
+          sx: {
+            borderRadius: 3,
+            border: '1px solid #E5E7EB'
+          }
+        }}
       >
-        <DialogTitle>
+        <DialogTitle sx={{ 
+          fontWeight: 700,
+          fontSize: '1.25rem',
+          color: '#111827',
+          fontFamily: 'inherit'
+        }}>
           Configure Custom Fields - {selectedTypeForFields?.name}
         </DialogTitle>
         <DialogContent>
-          <Grid container spacing={3} sx={{ pt: 2 }}>
+          <Grid container spacing={4} sx={{ pt: 2 }}>
             <Grid item xs={12} md={6}>
-              <Typography variant="h6" gutterBottom>
+              <Typography 
+                variant="h6" 
+                sx={{ 
+                  mb: 3,
+                  fontWeight: 600,
+                  fontSize: '1rem',
+                  color: '#111827',
+                  fontFamily: 'inherit'
+                }}
+              >
                 Available Custom Fields
               </Typography>
-              <FormGroup>
-                {customFields.map((field) => (
-                  <FormControlLabel
-                    key={field.id}
-                    control={
-                      <Checkbox
-                        checked={(selectedTypeForFields?.customFields || []).includes(field.id)}
-                        onChange={() => toggleCustomField(field.id)}
-                      />
-                    }
-                    label={
-                      <Box>
-                        <Box display="flex" alignItems="center" gap={1}>
-                          <Box sx={{ color: getFieldTypeColor(field.type) }}>
-                            {field.icon}
+              {customFields.length === 0 ? (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  No custom fields available. Please create custom fields first.
+                </Alert>
+              ) : (
+                <FormGroup>
+                  {customFields.map((field) => (
+                    <FormControlLabel
+                      key={field.id}
+                      control={
+                        <Checkbox
+                          checked={(selectedTypeForFields?.customFields || []).includes(field.id)}
+                          onChange={() => toggleCustomField(field.id)}
+                          sx={{ color: '#4F46E5' }}
+                        />
+                      }
+                      label={
+                        <Box sx={{ ml: 1 }}>
+                          <Box display="flex" alignItems="center" gap={1.5} mb={0.5}>
+                            <Box sx={{ color: getFieldTypeColor(field.type), fontSize: 20 }}>
+                              {field.icon}
+                            </Box>
+                            <Typography 
+                              sx={{ 
+                                fontWeight: 600,
+                                fontSize: '0.875rem',
+                                color: '#111827',
+                                fontFamily: 'inherit'
+                              }}
+                            >
+                              {field.name}
+                            </Typography>
+                            {field.required && (
+                              <Chip 
+                                label="Required" 
+                                size="small" 
+                                sx={{
+                                  backgroundColor: '#FEE2E2',
+                                  color: '#DC2626',
+                                  fontSize: '0.75rem',
+                                  fontWeight: 500,
+                                  height: 20,
+                                  fontFamily: 'inherit'
+                                }}
+                              />
+                            )}
                           </Box>
-                          <Typography fontWeight="bold">{field.name}</Typography>
-                          {field.required && (
-                            <Chip label="Required" size="small" color="error" />
-                          )}
+                          <Typography 
+                            variant="caption" 
+                            sx={{ 
+                              color: '#6B7280',
+                              fontSize: '0.75rem',
+                              fontFamily: 'inherit'
+                            }}
+                          >
+                            {field.description} • Type: {field.type}
+                          </Typography>
                         </Box>
-                        <Typography variant="caption" color="text.secondary">
-                          {field.description} • Type: {field.type}
-                        </Typography>
-                      </Box>
-                    }
-                  />
-                ))}
-              </FormGroup>
+                      }
+                      sx={{ 
+                        mb: 2,
+                        alignItems: 'flex-start',
+                        '& .MuiFormControlLabel-label': {
+                          width: '100%'
+                        }
+                      }}
+                    />
+                  ))}
+                </FormGroup>
+              )}
             </Grid>
             
             <Grid item xs={12} md={6}>
-              <Typography variant="h6" gutterBottom>
+              <Typography 
+                variant="h6" 
+                sx={{ 
+                  mb: 3,
+                  fontWeight: 600,
+                  fontSize: '1rem',
+                  color: '#111827',
+                  fontFamily: 'inherit'
+                }}
+              >
                 Selected Fields Preview
               </Typography>
-              <Box sx={{ p: 2, border: '1px solid #e0e0e0', borderRadius: 1, backgroundColor: '#f9f9f9' }}>
-                <Typography variant="subtitle2" gutterBottom>
+              <Box 
+                sx={{ 
+                  p: 3, 
+                  border: '1px solid #E5E7EB', 
+                  borderRadius: 2, 
+                  backgroundColor: '#F9FAFB',
+                  minHeight: 200
+                }}
+              >
+                <Typography 
+                  variant="subtitle2" 
+                  sx={{ 
+                    mb: 2,
+                    fontWeight: 600,
+                    fontSize: '0.875rem',
+                    color: '#374151',
+                    fontFamily: 'inherit'
+                  }}
+                >
                   Fields for {selectedTypeForFields?.name}
                 </Typography>
-                {(selectedTypeForFields?.customFields || []).length === 0 ? (
-                  <Typography variant="body2" color="text.secondary">
+                {!selectedTypeForFields || (selectedTypeForFields?.customFields || []).length === 0 ? (
+                  <Typography 
+                    variant="body2" 
+                    sx={{ 
+                      color: '#9CA3AF',
+                      fontSize: '0.875rem',
+                      fontStyle: 'italic',
+                      textAlign: 'center',
+                      mt: 4,
+                      fontFamily: 'inherit'
+                    }}
+                  >
                     No custom fields selected
                   </Typography>
                 ) : (
-                  <List dense>
+                  <List dense sx={{ p: 0 }}>
                     {(selectedTypeForFields?.customFields || []).map(fieldId => {
                       const field = getCustomFieldById(fieldId);
                       return field ? (
-                        <ListItem key={fieldId}>
-                          <Box sx={{ color: getFieldTypeColor(field.type), mr: 1 }}>
+                        <ListItem 
+                          key={fieldId}
+                          sx={{ 
+                            px: 0,
+                            py: 1,
+                            borderBottom: '1px solid #E5E7EB',
+                            '&:last-child': {
+                              borderBottom: 'none'
+                            }
+                          }}
+                        >
+                          <Box sx={{ color: getFieldTypeColor(field.type), mr: 2, fontSize: 20 }}>
                             {field.icon}
                           </Box>
                           <ListItemText
-                            primary={field.name}
-                            secondary={field.type}
+                            primary={
+                              <Typography 
+                                sx={{ 
+                                  fontWeight: 600,
+                                  fontSize: '0.875rem',
+                                  color: '#111827',
+                                  fontFamily: 'inherit'
+                                }}
+                              >
+                                {field.name}
+                              </Typography>
+                            }
+                            secondary={
+                              <Typography 
+                                sx={{ 
+                                  fontSize: '0.75rem',
+                                  color: '#6B7280',
+                                  fontFamily: 'inherit'
+                                }}
+                              >
+                                {field.type}
+                              </Typography>
+                            }
                           />
                           {field.required && (
-                            <Chip label="Required" size="small" color="error" />
+                            <Chip 
+                              label="Required" 
+                              size="small" 
+                              sx={{
+                                backgroundColor: '#FEE2E2',
+                                color: '#DC2626',
+                                fontSize: '0.75rem',
+                                fontWeight: 500,
+                                height: 20,
+                                fontFamily: 'inherit'
+                              }}
+                            />
                           )}
                         </ListItem>
                       ) : null;
@@ -652,10 +1394,38 @@ const IssueTypesAdmin = () => {
             </Grid>
           </Grid>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={closeFieldsDialog}>Close</Button>
-          <Button onClick={closeFieldsDialog} variant="contained">
-            Save Configuration
+        <DialogActions sx={{ p: 3, pt: 2 }}>
+          <Button 
+            onClick={closeFieldsDialog}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 500,
+              fontSize: '0.875rem',
+              color: '#6B7280',
+              fontFamily: 'inherit'
+            }}
+          >
+            Close
+          </Button>
+          <Button 
+            onClick={saveCustomFields} 
+            variant="contained"
+            disabled={loading}
+            sx={{
+              backgroundColor: '#4F46E5',
+              '&:hover': { backgroundColor: '#4338CA' },
+              textTransform: 'none',
+              fontWeight: 600,
+              fontSize: '0.875rem',
+              px: 3,
+              fontFamily: 'inherit'
+            }}
+          >
+            {loading ? (
+              <CircularProgress size={24} color="inherit" />
+            ) : (
+              'Save Configuration'
+            )}
           </Button>
         </DialogActions>
       </Dialog>
